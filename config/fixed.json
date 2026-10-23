@@ -1,0 +1,4 @@
+{
+  "_note": "Fixed-time plan, green seconds per phase (0 = main road, 1 = side street). Cycle = sum + one yellow/all-red per phase = 70 s.",
+  "green_s": [40, 20]
+}

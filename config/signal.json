@@ -1,0 +1,7 @@
+{
+  "_note": "Safety envelope limits. Every controller goes through these. Seconds.",
+  "min_green_s": 10,
+  "max_red_s": 90,
+  "yellow_s": 3,
+  "all_red_s": 2
+}
