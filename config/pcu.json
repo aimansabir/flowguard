@@ -1,0 +1,11 @@
+{
+  "_note": "PLACEHOLDER weights, not calibrated. Replace with values measured on our corridor.",
+  "weights": {
+    "car": 1.0,
+    "motorcycle": 0.5,
+    "rickshaw": 1.0,
+    "qingqi": 1.0,
+    "bus": 3.0,
+    "truck": 3.0
+  }
+}
