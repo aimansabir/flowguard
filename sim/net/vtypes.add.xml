@@ -1,0 +1,12 @@
+<!-- Vehicle types. Type id = class name used in Observations.
+     Sizes and speeds are rough guesses for Karachi traffic, calibrate later.
+     latAlignment="arbitrary" + small minGapLat lets two- and three-wheelers
+     filter between cars (needs the sublane model, see config/sim.json). -->
+<additional>
+    <vType id="car"        vClass="passenger"  length="4.3"  width="1.8" maxSpeed="16.7" minGap="2.0" accel="2.6" decel="4.5" sigma="0.5" latAlignment="center"    minGapLat="0.4"/>
+    <vType id="motorcycle" vClass="motorcycle" length="2.0"  width="0.8" maxSpeed="16.7" minGap="1.0" accel="3.0" decel="5.0" sigma="0.5" latAlignment="arbitrary" minGapLat="0.2" lcPushy="0.8"/>
+    <vType id="rickshaw"   vClass="passenger"  length="2.8"  width="1.4" maxSpeed="11.1" minGap="1.5" accel="2.0" decel="4.0" sigma="0.5" latAlignment="arbitrary" minGapLat="0.3" lcPushy="0.5"/>
+    <vType id="qingqi"     vClass="passenger"  length="3.2"  width="1.5" maxSpeed="11.1" minGap="1.5" accel="1.8" decel="4.0" sigma="0.5" latAlignment="arbitrary" minGapLat="0.3" lcPushy="0.5"/>
+    <vType id="bus"        vClass="bus"        length="12.0" width="2.5" maxSpeed="13.9" minGap="2.5" accel="1.2" decel="4.0" sigma="0.5" latAlignment="center"    minGapLat="0.5"/>
+    <vType id="truck"      vClass="truck"      length="10.0" width="2.5" maxSpeed="13.9" minGap="2.5" accel="1.0" decel="4.0" sigma="0.5" latAlignment="center"    minGapLat="0.5"/>
+</additional>

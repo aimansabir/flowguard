@@ -1,0 +1,17 @@
+{
+  "_note": "Synthetic demand for the placeholder corridor. Rates are guesses, not survey data.",
+  "duration_s": 3600,
+  "main_veh_per_h": 900,
+  "side_veh_per_h": 150,
+  "peak": {"centre_s": 1800, "width_s": 600, "extra": 0.5},
+  "main_through_share": 0.7,
+  "side_through_share": 0.4,
+  "class_mix": {
+    "car": 0.35,
+    "motorcycle": 0.35,
+    "rickshaw": 0.10,
+    "qingqi": 0.08,
+    "bus": 0.05,
+    "truck": 0.07
+  }
+}

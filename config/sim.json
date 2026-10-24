@@ -1,0 +1,9 @@
+{
+  "_note": "Which network the runs use. To switch to the OSM corridor, point these at the new files.",
+  "net_file": "sim/net/corridor.net.xml",
+  "corridor_file": "sim/net/corridor.json",
+  "vtypes_file": "sim/net/vtypes.add.xml",
+  "demand_dir": "sim/demand",
+  "lateral_resolution_m": 0.8,
+  "time_to_teleport_s": 300
+}
