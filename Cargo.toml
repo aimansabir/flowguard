@@ -1,0 +1,20 @@
+[workspace]
+members = ["crates/core", "crates/py"]
+resolver = "2"
+
+[workspace.package]
+version = "0.2.0"
+edition = "2021"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+schemars = "1"
+
+# Disk is tight on the dev machines: no debug info in dev builds, stripped release.
+[profile.dev]
+debug = 0
+
+[profile.release]
+strip = true
+lto = "thin"

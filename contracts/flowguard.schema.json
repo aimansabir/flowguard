@@ -1,0 +1,841 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Contracts",
+  "description": "Wrapper so one schema file carries every contract type.",
+  "type": "object",
+  "properties": {
+    "measurement": {
+      "$ref": "#/$defs/Measurement"
+    },
+    "approach_state": {
+      "$ref": "#/$defs/ApproachState"
+    },
+    "command": {
+      "$ref": "#/$defs/Command"
+    },
+    "corridor": {
+      "$ref": "#/$defs/Corridor"
+    },
+    "core_config": {
+      "$ref": "#/$defs/CoreConfig"
+    },
+    "step_output": {
+      "$ref": "#/$defs/StepOutput"
+    }
+  },
+  "required": [
+    "measurement",
+    "approach_state",
+    "command",
+    "corridor",
+    "core_config",
+    "step_output"
+  ],
+  "$defs": {
+    "Measurement": {
+      "description": "Producer -> core. One per approach per interval. Raw, unweighted counts:\nPCU weighting and every judgement about trust happen in the core.",
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "type": "string",
+          "default": "2.0"
+        },
+        "time": {
+          "description": "End of the interval, seconds since the start of the run.",
+          "type": "number",
+          "format": "double"
+        },
+        "interval_s": {
+          "description": "Interval length, seconds. 1.0 in the simulator.",
+          "type": "number",
+          "format": "double"
+        },
+        "junction_id": {
+          "type": "string"
+        },
+        "approach_id": {
+          "description": "Incoming approach the producer watches (SUMO edge id in the simulator).",
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/Source"
+        },
+        "zone_length_m": {
+          "description": "Length of road the producer can see, metres back from the stop line.",
+          "type": "number",
+          "format": "double"
+        },
+        "zone_counts": {
+          "description": "Vehicles inside the zone at `time`.",
+          "$ref": "#/$defs/ClassCounts"
+        },
+        "queue_counts": {
+          "description": "Of those, vehicles stopped (speed < 0.1 m/s).",
+          "$ref": "#/$defs/ClassCounts"
+        },
+        "arrivals": {
+          "description": "Vehicles that entered the zone during the interval.",
+          "$ref": "#/$defs/ClassCounts"
+        },
+        "departures": {
+          "description": "Vehicles that crossed the stop line during the interval, by movement.",
+          "$ref": "#/$defs/MovementCounts"
+        },
+        "quality": {
+          "$ref": "#/$defs/Quality",
+          "default": {
+            "detector_confidence": null,
+            "track_breaks_per_min": null,
+            "image_health": null,
+            "count_error": null
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "time",
+        "interval_s",
+        "junction_id",
+        "approach_id",
+        "source",
+        "zone_length_m",
+        "zone_counts",
+        "queue_counts",
+        "arrivals",
+        "departures"
+      ]
+    },
+    "Source": {
+      "description": "Where a measurement came from.",
+      "oneOf": [
+        {
+          "description": "SUMO ground truth, cut to the camera zone.",
+          "type": "string",
+          "const": "sim"
+        },
+        {
+          "description": "Live or recorded camera through the vision pipeline.",
+          "type": "string",
+          "const": "camera"
+        },
+        {
+          "description": "Historical counts replayed from a file.",
+          "type": "string",
+          "const": "replay"
+        }
+      ]
+    },
+    "ClassCounts": {
+      "description": "Vehicles per class. Exactly these six classes; anything else is rejected.",
+      "type": "object",
+      "properties": {
+        "car": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "motorcycle": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "rickshaw": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "qingqi": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "bus": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "truck": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "car",
+        "motorcycle",
+        "rickshaw",
+        "qingqi",
+        "bus",
+        "truck"
+      ]
+    },
+    "MovementCounts": {
+      "description": "Counts split by the movement the vehicles took.",
+      "type": "object",
+      "properties": {
+        "left": {
+          "$ref": "#/$defs/ClassCounts"
+        },
+        "straight": {
+          "$ref": "#/$defs/ClassCounts"
+        },
+        "right": {
+          "$ref": "#/$defs/ClassCounts"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "left",
+        "straight",
+        "right"
+      ]
+    },
+    "Quality": {
+      "description": "The producer's own evidence about measurement quality. All optional: the\nsimulator leaves everything null, the camera pipeline fills what it can.",
+      "type": "object",
+      "properties": {
+        "detector_confidence": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DetectorConfidence"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "track_breaks_per_min": {
+          "description": "Tracks lost and restarted, per minute.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "image_health": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ImageHealth"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "count_error": {
+          "description": "Producer estimate of how wrong `zone_counts` might be, vehicles.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        }
+      },
+      "additionalProperties": false
+    },
+    "DetectorConfidence": {
+      "type": "object",
+      "properties": {
+        "mean": {
+          "description": "Mean detector score over the interval, 0-1.",
+          "type": "number",
+          "format": "double"
+        },
+        "std": {
+          "description": "Standard deviation of detector scores over the interval.",
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "mean",
+        "std"
+      ]
+    },
+    "ImageHealth": {
+      "type": "object",
+      "properties": {
+        "frozen": {
+          "description": "Consecutive frames near-identical.",
+          "type": "boolean"
+        },
+        "blur": {
+          "description": "0 = sharp, 1 = unusable.",
+          "type": "number",
+          "format": "double"
+        },
+        "brightness": {
+          "description": "Mean brightness, 0 = black, 1 = saturated.",
+          "type": "number",
+          "format": "double"
+        },
+        "displacement_px": {
+          "description": "Scene shift against the reference frame, pixels.",
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "frozen",
+        "blur",
+        "brightness",
+        "displacement_px"
+      ]
+    },
+    "ApproachState": {
+      "description": "The core view of one approach after the Guard. What controllers decide on.",
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "type": "string",
+          "default": "2.0"
+        },
+        "time": {
+          "type": "number",
+          "format": "double"
+        },
+        "junction_id": {
+          "type": "string"
+        },
+        "approach_id": {
+          "type": "string"
+        },
+        "measured_queue_pcu": {
+          "description": "Queue as measured, PCU.",
+          "type": "number",
+          "format": "double"
+        },
+        "queue_estimate": {
+          "description": "Queue controllers should use, PCU. Equals the measured queue when trusted.",
+          "type": "number",
+          "format": "double"
+        },
+        "margin": {
+          "description": "+/- uncertainty on `queue_estimate`, PCU.",
+          "type": "number",
+          "format": "double"
+        },
+        "trust_state": {
+          "$ref": "#/$defs/TrustState"
+        },
+        "override_flag": {
+          "description": "True when `queue_estimate` is not the measured queue.",
+          "type": "boolean"
+        },
+        "arrivals_pcu": {
+          "description": "Arrivals into the zone this interval, PCU.",
+          "type": "number",
+          "format": "double"
+        },
+        "departures_pcu": {
+          "description": "Departures over the stop line this interval, PCU.",
+          "type": "number",
+          "format": "double"
+        },
+        "exits_to": {
+          "description": "Departures this interval heading to each neighbouring junction, vehicles.\nA key for every neighbour of this junction, 0 if none.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "time",
+        "junction_id",
+        "approach_id",
+        "measured_queue_pcu",
+        "queue_estimate",
+        "margin",
+        "trust_state",
+        "override_flag",
+        "arrivals_pcu",
+        "departures_pcu",
+        "exits_to"
+      ]
+    },
+    "TrustState": {
+      "type": "string",
+      "enum": [
+        "TRUSTED",
+        "SUSPECT",
+        "FAULTY"
+      ]
+    },
+    "Command": {
+      "description": "Safety envelope -> signals, one per junction per second.",
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "type": "string",
+          "default": "2.0"
+        },
+        "time": {
+          "description": "Second this command applies to.",
+          "type": "number",
+          "format": "double"
+        },
+        "junction_id": {
+          "type": "string"
+        },
+        "phase_index": {
+          "description": "Phase whose approaches are lit: the green phase, or the phase being cleared.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "phase_started_at": {
+          "description": "When the current `stage` began, seconds.",
+          "type": "number",
+          "format": "double"
+        },
+        "controller_name": {
+          "type": "string"
+        },
+        "stage": {
+          "$ref": "#/$defs/Stage"
+        },
+        "target_phase": {
+          "description": "Phase being switched to; equals `phase_index` when settled.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "requested_phase": {
+          "description": "What the controller asked for this second, null if nothing.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint",
+          "minimum": 0
+        },
+        "intervention": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Intervention"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "time",
+        "junction_id",
+        "phase_index",
+        "phase_started_at",
+        "controller_name",
+        "stage",
+        "target_phase"
+      ]
+    },
+    "Stage": {
+      "type": "string",
+      "enum": [
+        "green",
+        "yellow",
+        "all_red"
+      ]
+    },
+    "Intervention": {
+      "description": "Why the envelope did something other than what the controller asked.",
+      "type": "string",
+      "enum": [
+        "min_green",
+        "max_red",
+        "invalid_request"
+      ]
+    },
+    "Corridor": {
+      "description": "Static map knowledge. Not live state, so every component may read it.",
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "type": "string",
+          "default": "2.0"
+        },
+        "junctions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Junction"
+          }
+        },
+        "approaches": {
+          "description": "Grouped by junction, in junction order.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Approach"
+          }
+        },
+        "entries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Entry"
+          }
+        },
+        "exits": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Exit"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "junctions",
+        "approaches",
+        "entries",
+        "exits"
+      ]
+    },
+    "Junction": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "phases": {
+          "description": "Phase index -> approaches that get green in that phase.",
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "links": {
+          "description": "Signal links in the order the signal state string uses.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SignalLink"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "phases",
+        "links"
+      ]
+    },
+    "SignalLink": {
+      "description": "One signal link in SUMO link order: which approach it serves and its SUMO\ndirection code (s, l, r, L, R, t).",
+      "type": "object",
+      "properties": {
+        "approach": {
+          "type": "string"
+        },
+        "direction": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "approach",
+        "direction"
+      ]
+    },
+    "Approach": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "junction": {
+          "type": "string"
+        },
+        "length_m": {
+          "description": "Edge length up to the stop line, metres.",
+          "type": "number",
+          "format": "double"
+        },
+        "lanes": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "movements": {
+          "$ref": "#/$defs/MovementTargets"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "junction",
+        "length_m",
+        "lanes",
+        "movements"
+      ]
+    },
+    "MovementTargets": {
+      "description": "Edge each movement leads onto, null if the movement does not exist.",
+      "type": "object",
+      "properties": {
+        "left": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "straight": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "right": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "Entry": {
+      "description": "Edge where traffic enters the corridor.",
+      "type": "object",
+      "properties": {
+        "edge": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/RoadKind"
+        },
+        "through_exit": {
+          "description": "Exit edge reached by going straight at every junction.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "edge",
+        "kind",
+        "through_exit"
+      ]
+    },
+    "RoadKind": {
+      "type": "string",
+      "enum": [
+        "main",
+        "side"
+      ]
+    },
+    "Exit": {
+      "description": "Edge where traffic leaves the corridor.",
+      "type": "object",
+      "properties": {
+        "edge": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/RoadKind"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "edge",
+        "kind"
+      ]
+    },
+    "CoreConfig": {
+      "type": "object",
+      "properties": {
+        "pcu": {
+          "$ref": "#/$defs/PcuWeights"
+        },
+        "timing": {
+          "$ref": "#/$defs/SignalTiming"
+        },
+        "controller": {
+          "$ref": "#/$defs/ControllerConfig"
+        },
+        "guard": {
+          "$ref": "#/$defs/GuardConfig",
+          "default": {
+            "kind": "passthrough"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "pcu",
+        "timing",
+        "controller"
+      ]
+    },
+    "PcuWeights": {
+      "description": "Passenger car units per vehicle class. Calibration data, owned by the core.",
+      "type": "object",
+      "properties": {
+        "car": {
+          "type": "number",
+          "format": "double"
+        },
+        "motorcycle": {
+          "type": "number",
+          "format": "double"
+        },
+        "rickshaw": {
+          "type": "number",
+          "format": "double"
+        },
+        "qingqi": {
+          "type": "number",
+          "format": "double"
+        },
+        "bus": {
+          "type": "number",
+          "format": "double"
+        },
+        "truck": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "car",
+        "motorcycle",
+        "rickshaw",
+        "qingqi",
+        "bus",
+        "truck"
+      ]
+    },
+    "SignalTiming": {
+      "description": "Safety envelope limits, seconds.",
+      "type": "object",
+      "properties": {
+        "min_green_s": {
+          "type": "number",
+          "format": "double"
+        },
+        "max_red_s": {
+          "type": "number",
+          "format": "double"
+        },
+        "yellow_s": {
+          "type": "number",
+          "format": "double"
+        },
+        "all_red_s": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "min_green_s",
+        "max_red_s",
+        "yellow_s",
+        "all_red_s"
+      ]
+    },
+    "ControllerConfig": {
+      "oneOf": [
+        {
+          "title": "FixedControllerConfig",
+          "description": "Fixed-time plan: green seconds per phase, same at every junction.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "fixed"
+            },
+            "green_s": {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "format": "double"
+              }
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "green_s"
+          ]
+        },
+        {
+          "title": "MaxPressureControllerConfig",
+          "description": "Basic max-pressure, re-decided every second.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "maxpressure"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "GuardConfig": {
+      "description": "Which Guard rates the measurements.",
+      "oneOf": [
+        {
+          "title": "PassthroughGuardConfig",
+          "description": "Trust every measurement as it is (the naive adaptive baseline).",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "passthrough"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "StepOutput": {
+      "description": "Everything `Core::step` produces for one second.",
+      "type": "object",
+      "properties": {
+        "states": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApproachState"
+          }
+        },
+        "requests": {
+          "description": "Controller wish per junction, before the envelope.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          }
+        },
+        "commands": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Command"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "states",
+        "requests",
+        "commands"
+      ]
+    }
+  }
+}

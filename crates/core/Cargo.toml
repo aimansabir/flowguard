@@ -1,0 +1,14 @@
+[package]
+name = "flowguard-core"
+description = "FlowGuard decision core: traffic state, Guard, controllers, safety envelope. No I/O."
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+schemars.workspace = true
+
+[[bin]]
+name = "gen_schema"
+path = "src/bin/gen_schema.rs"

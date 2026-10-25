@@ -1,0 +1,38 @@
+[project]
+name = "flowguard"
+version = "0.2.0"
+description = "Trust-aware traffic signal control for a camera-monitored corridor"
+requires-python = ">=3.12,<3.13"
+dependencies = ["flowguard-contracts", "flowguard-core", "flowguard-sim", "flowguard-vision"]
+
+[dependency-groups]
+dev = ["pytest>=8", "ruff>=0.8", "pyright>=1.1.390"]
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = ["packages/*", "crates/py"]
+
+[tool.uv.sources]
+flowguard-contracts = { workspace = true }
+flowguard-core = { workspace = true }
+flowguard-sim = { workspace = true }
+flowguard-vision = { workspace = true }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+extend-exclude = ["packages/contracts/src/flowguard_contracts/models.py"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+
+[tool.pyright]
+include = ["packages", "tests", "scripts"]
+exclude = ["**/models.py", "**/.venv", "target"]
+pythonVersion = "3.12"
+typeCheckingMode = "strict"
