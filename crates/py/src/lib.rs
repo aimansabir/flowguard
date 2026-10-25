@@ -2,7 +2,7 @@
 //! encoding the logs and any future network transport use, and the cost is
 //! negligible at one call per second.
 
-use flowguard_core::contracts::{ClassCounts, Measurement, SCHEMA_VERSION};
+use fg::contracts::{ClassCounts, Measurement, SCHEMA_VERSION};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
@@ -12,14 +12,14 @@ fn err(e: impl std::fmt::Display) -> PyErr {
 
 #[pyclass(name = "Core", module = "flowguard_core")]
 struct PyCore {
-    inner: flowguard_core::Core,
+    inner: fg::Core,
 }
 
 #[pymethods]
 impl PyCore {
     #[new]
     fn new(corridor_json: &str, config_json: &str) -> PyResult<Self> {
-        Ok(PyCore { inner: flowguard_core::Core::from_json(corridor_json, config_json).map_err(err)? })
+        Ok(PyCore { inner: fg::Core::from_json(corridor_json, config_json).map_err(err)? })
     }
 
     /// Measurements JSON array in, StepOutput JSON out.
@@ -55,6 +55,6 @@ impl PyCore {
 fn flowguard_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyCore>()?;
     m.add("SCHEMA_VERSION", SCHEMA_VERSION)?;
-    m.add("CONTRACT_SCHEMA", flowguard_core::contract_schema())?;
+    m.add("CONTRACT_SCHEMA", fg::contract_schema())?;
     Ok(())
 }

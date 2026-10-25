@@ -10,6 +10,7 @@
 //!    switching to the one red the longest;
 //! 3. otherwise switch to the requested phase if the current green has run
 //!    min green, else hold it.
+//!
 //! Min green is never cut short, not even for max red.
 
 use std::collections::BTreeMap;

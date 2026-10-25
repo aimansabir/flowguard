@@ -1,27 +1,44 @@
-"""The Guard and controllers must never read SUMO directly, only Observations.
+"""Package boundaries, checked from what each module imports.
 
-Checked by looking at what their modules import.
+- vision produces Measurements and may only depend on the contracts;
+- contracts depend on nothing of ours;
+- the decision core is Rust and cannot import Python at all, and its crate
+  has no simulator dependency (checked on Cargo.toml).
 """
+
 import ast
+import tomllib
 from pathlib import Path
 
 import pytest
+from flowguard_sim.paths import ROOT
 
-ROOT = Path(__file__).resolve().parent.parent
-FORBIDDEN = {"traci", "sumolib", "libsumo", "sumo", "sim"}
+SIM = {"traci", "sumolib", "libsumo", "sumo", "flowguard_sim"}
+RULES = {
+    "vision": SIM | {"flowguard_core"},
+    "contracts": SIM | {"flowguard_core", "flowguard_vision"},
+}
 
 
-@pytest.mark.parametrize("path", sorted(
-    p for pkg in ("guard", "control", "schemas") for p in (ROOT / pkg).glob("*.py")
-), ids=lambda p: f"{p.parent.name}/{p.name}")
-def test_no_simulator_imports(path):
-    tree = ast.parse(path.read_text())
-    for node in ast.walk(tree):
+def imports(path: Path) -> list[str]:
+    names: list[str] = []
+    for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
         if isinstance(node, ast.Import):
-            names = [a.name for a in node.names]
+            names += [a.name for a in node.names]
         elif isinstance(node, ast.ImportFrom):
-            names = [node.module or ""]
-        else:
-            continue
-        for name in names:
-            assert name.split(".")[0] not in FORBIDDEN, f"{path.name} imports {name}"
+            names.append(node.module or "")
+    return names
+
+
+@pytest.mark.parametrize("package", sorted(RULES))
+def test_package_imports(package: str) -> None:
+    files = sorted((ROOT / "packages" / package / "src").rglob("*.py"))
+    assert files
+    for path in files:
+        for name in imports(path):
+            assert name.split(".")[0] not in RULES[package], f"{path.name} imports {name}"
+
+
+def test_core_crate_has_no_simulator_dependency() -> None:
+    manifest = tomllib.loads((ROOT / "crates" / "core" / "Cargo.toml").read_text())
+    assert set(manifest["dependencies"]) <= {"serde", "serde_json", "schemars"}

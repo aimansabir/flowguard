@@ -15,7 +15,7 @@ pub struct GuardInput<'a> {
     pub last_commands: &'a [Option<Command>],
 }
 
-pub trait Guard: Send {
+pub trait Guard: Send + Sync {
     fn name(&self) -> &str;
     /// Adjust `states` in place: trust_state, queue_estimate, margin,
     /// override_flag. States arrive taken at face value (state::assess).

@@ -16,9 +16,10 @@ envelope) -> SUMO. Logged to results/<run_id>/:
 import argparse
 import hashlib
 import json
+from contextlib import ExitStack
 from datetime import datetime
 from pathlib import Path
-from typing import Any, TextIO
+from typing import Any, Literal, TextIO, cast
 
 import traci
 from flowguard_contracts import ClassCounts, CoreConfig, StepOutput
@@ -36,7 +37,7 @@ from flowguard_sim.sumo_env import sumo_binary
 
 CONTROLLERS = ("fixed", "maxpressure")
 LOGS = ("truth", "measurements", "states", "commands")
-FROM_CONFIG = "config"
+FROM_CONFIG: Literal["config"] = "config"
 
 
 def core_config(controller: str) -> CoreConfig:
@@ -58,13 +59,13 @@ def _jsonl(records: list[BaseModel]) -> str:
 
 
 def run(controller: str, seconds: int, seed: int, results_dir: Path = ROOT / "results",
-        camera_zone_m: float | None | str = FROM_CONFIG) -> dict[str, Any]:
+        camera_zone_m: float | None | Literal["config"] = FROM_CONFIG) -> dict[str, Any]:
     """camera_zone_m: metres the simulated camera sees; None = the whole edge;
     FROM_CONFIG = take it from config/sim.json."""
     if seconds <= 0:
         raise ValueError("seconds must be > 0")
     sim_cfg = load_json("config/sim.json")
-    zone = sim_cfg["camera_zone_m"] if camera_zone_m == FROM_CONFIG else camera_zone_m
+    zone: float | None = sim_cfg["camera_zone_m"] if camera_zone_m == FROM_CONFIG else camera_zone_m
     corridor_path = ROOT / sim_cfg["corridor_file"]
     corridor = load_corridor(corridor_path)
     demand = ensure_demand(seed, corridor, load_json("config/demand.json"), ROOT / sim_cfg["demand_dir"])
@@ -96,12 +97,15 @@ def run(controller: str, seconds: int, seed: int, results_dir: Path = ROOT / "re
     ])
     observer = SimObserver(corridor, zone)
     signals = SignalApplier(corridor)
-    logs: dict[str, TextIO] = {k: open(out / f"{k}.jsonl", "w", encoding="utf-8") for k in LOGS}
     departed = teleports = collisions = 0
 
-    try:
+    with ExitStack() as stack:
+        stack.callback(traci.close)
+        logs: dict[str, TextIO] = {
+            k: stack.enter_context(open(out / f"{k}.jsonl", "w", encoding="utf-8")) for k in LOGS
+        }
         for _ in range(seconds):
-            t = float(traci.simulation.getTime())
+            t = cast(float, traci.simulation.getTime())
             view, truth = observer.observe(t)
             metrics.add_truth(truth)
             seen = faults.apply(t, view)
@@ -116,15 +120,11 @@ def run(controller: str, seconds: int, seed: int, results_dir: Path = ROOT / "re
             logs["commands"].write(_jsonl(list(step.commands)))
 
             traci.simulationStep()
-            departed += traci.simulation.getDepartedNumber()
-            teleports += traci.simulation.getStartingTeleportNumber()
-            collisions += traci.simulation.getCollidingVehiclesNumber()
-        end_time = float(traci.simulation.getTime())
-        in_network = traci.vehicle.getIDCount()
-    finally:
-        traci.close()
-        for f in logs.values():
-            f.close()
+            departed += cast(int, traci.simulation.getDepartedNumber())
+            teleports += cast(int, traci.simulation.getStartingTeleportNumber())
+            collisions += cast(int, traci.simulation.getCollidingVehiclesNumber())
+        end_time = cast(float, traci.simulation.getTime())
+        in_network = cast(int, traci.vehicle.getIDCount())
 
     interventions: dict[str, int] = json.loads(core.interventions_json())
     summary = {
@@ -135,7 +135,8 @@ def run(controller: str, seconds: int, seed: int, results_dir: Path = ROOT / "re
         "seconds": seconds,
         "camera_zone_m": zone,
         "demand_file": demand.relative_to(ROOT).as_posix(),
-        "demand_sha256": hashlib.sha256(demand.read_bytes()).hexdigest(),
+        # line endings normalised so Windows and Linux checkouts hash the same
+        "demand_sha256": hashlib.sha256(demand.read_bytes().replace(b"\r\n", b"\n")).hexdigest(),
         **metrics.summary(out / "tripinfo.xml", end_time, departed),
         "vehicles_in_network_at_end": in_network,
         "teleports": teleports,
@@ -148,7 +149,8 @@ def run(controller: str, seconds: int, seed: int, results_dir: Path = ROOT / "re
 
 def print_summary(s: dict[str, Any]) -> None:
     print(f"\nrun {s['run_id']}  (demand {s['demand_file']}, sha256 {s['demand_sha256'][:12]})")
-    print(f"  avg delay per vehicle   {s['avg_delay_s']} s  (avg insertion delay {s['avg_depart_delay_s']} s)")
+    print(f"  avg delay per vehicle   {s['avg_delay_s']} s  "
+          f"(avg insertion delay {s['avg_depart_delay_s']} s)")
     print(f"  throughput              {s['throughput_veh_per_h']} veh/h  "
           f"({s['vehicles_arrived']} arrived / {s['vehicles_departed']} departed, "
           f"{s['vehicles_in_network_at_end']} still in network)")

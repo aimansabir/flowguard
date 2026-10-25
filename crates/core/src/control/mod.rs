@@ -34,7 +34,7 @@ impl DecisionInput<'_> {
     }
 }
 
-pub trait Controller: Send {
+pub trait Controller: Send + Sync {
     fn name(&self) -> &str;
     /// Junction id -> wanted phase. Leaving a junction out = no preference.
     fn decide(&mut self, input: &DecisionInput<'_>) -> BTreeMap<String, usize>;

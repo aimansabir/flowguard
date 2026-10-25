@@ -1,15 +1,15 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-<!-- generated on 2026-10-24T18:00:24.802222+05:00 by Eclipse SUMO netconvert 1.28.0
+<!-- generated on 2026-10-25T17:20:03.839724+05:00 by Eclipse SUMO netconvert 1.28.0
 <netconvertConfiguration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/netconvertConfiguration.xsd">
 
     <input>
-        <node-files value="C:\Users\FIREFLY 14 G10\flowguard\sim\net\corridor.nod.xml"/>
-        <edge-files value="C:\Users\FIREFLY 14 G10\flowguard\sim\net\corridor.edg.xml"/>
+        <node-files value="E:\Software\flowguard\data\net\corridor.nod.xml"/>
+        <edge-files value="E:\Software\flowguard\data\net\corridor.edg.xml"/>
     </input>
 
     <output>
-        <output-file value="C:\Users\FIREFLY 14 G10\flowguard\sim\net\corridor.net.xml"/>
+        <output-file value="E:\Software\flowguard\data\net\corridor.net.xml"/>
     </output>
 
     <processing>

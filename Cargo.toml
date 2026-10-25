@@ -1,6 +1,8 @@
 [workspace]
 members = ["crates/core", "crates/py"]
 resolver = "2"
+# the PyO3 crate only builds through maturin (uv sync); plain cargo commands target the core
+default-members = ["crates/core"]
 
 [workspace.package]
 version = "0.2.0"

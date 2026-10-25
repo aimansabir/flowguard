@@ -34,7 +34,7 @@ class SignalApplier:
         self.shown: dict[str, str] = {}
 
     def apply(self, commands: list[Command]) -> None:
-        import traci
+        import traci  # pyright: ignore[reportMissingTypeStubs]
 
         for cmd in commands:
             junction = self.junctions[cmd.junction_id]
