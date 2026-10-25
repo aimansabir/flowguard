@@ -22,10 +22,10 @@ from pathlib import Path
 from typing import Any, Literal, TextIO, cast
 
 import traci
-from flowguard_contracts import ClassCounts, CoreConfig, StepOutput
-from flowguard_core import Core
 from pydantic import BaseModel
 
+from flowguard_contracts import ClassCounts, CoreConfig, StepOutput
+from flowguard_core import Core
 from flowguard_sim.corridor import load_corridor
 from flowguard_sim.demand import ensure_demand
 from flowguard_sim.faults import FaultInjector

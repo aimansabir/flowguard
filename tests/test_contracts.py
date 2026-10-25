@@ -4,11 +4,12 @@ validation rejects what the Rust core would reject."""
 import json
 from typing import Any
 
-import flowguard_core
 import pytest
+from pydantic import BaseModel, ValidationError
+
+import flowguard_core
 from flowguard_contracts import SCHEMA_VERSION, VEHICLE_CLASSES, Command, Measurement, models
 from flowguard_sim.paths import ROOT
-from pydantic import BaseModel, ValidationError
 
 SCHEMA: dict[str, Any] = json.loads((ROOT / "contracts" / "flowguard.schema.json").read_text())
 

@@ -1,72 +1,105 @@
-# Message schemas (v1.0)
+# Contracts (schema v2.0)
 
-These three messages are the contract between perception, the Guard, control
-and the simulator. Code: `schemas/messages.py`. All are JSON objects and all
-carry `schema_version`. A change in the major number means old readers must
-not accept the message (`from_dict` raises).
+Source of truth: `crates/core/src/contracts.rs`. Generated:
+`contracts/flowguard.schema.json` and `packages/contracts/src/flowguard_contracts/models.py`
+(run `python scripts/gen_contracts.py`). All messages are JSON objects,
+unknown fields are rejected, and every message carries `schema_version`. A
+different major version is refused.
 
-Times are simulation/wall seconds since the start of the run. Queues are in
-PCU (passenger car units), using the weights in `config/pcu.json`, which are
-**placeholders** until calibrated.
+Times are seconds since the start of the run. Counts are vehicles. PCU
+(passenger car units) values are computed **only in the core**, with the
+weights in `config/pcu.json` (placeholders until calibrated).
 
-## Observation
+Vehicle classes, always all six keys: `car, motorcycle, rickshaw, qingqi, bus, truck`.
+Movements: `left, straight, right` (no U-turns).
 
-Perception or simulator → Guard. One per camera approach per second.
+## Measurement (producer -> core)
 
-| field | type | unit | meaning |
-|---|---|---|---|
-| `schema_version` | str | – | `"1.0"` |
-| `time` | float | s | when the observation was taken |
-| `junction_id` | str | – | e.g. `"J1"` |
-| `approach_id` | str | – | the approach the camera watches. In SUMO this is the incoming edge id, e.g. `"W_J1"` |
-| `counts_by_class` | object | vehicles | vehicles currently on the approach, keys exactly `car, motorcycle, rickshaw, qingqi, bus, truck` |
-| `queue_pcu` | float | PCU | stopped vehicles on the approach (speed < 0.1 m/s), each weighted by its PCU |
-| `exits_to` | object | vehicles | `{neighbour_junction_id: n}`: vehicles that came from this approach and entered the link toward that neighbour during the last second. Has a key for every neighbouring junction, 0 if none |
-| `detector_confidence` | object or null | 0–1 | `{mean, std}` of detector scores over the second. Null from the simulator |
-| `track_breaks_per_min` | float or null | 1/min | how often tracks are lost and restarted. Null from the simulator |
-| `image_health` | object or null | – | `{frozen: bool, blur: 0–1, brightness: 0–1, displacement: px}`. Null from the simulator |
-| `error_margin` | float or null | PCU | perception's own estimate of how wrong `queue_pcu` might be. Optional |
-| `source` | str | – | `"sim"` or `"camera"` |
-
-## RatedObservation
-
-Guard → controller. The controller only ever sees these.
+One per approach per interval.
 
 | field | type | unit | meaning |
 |---|---|---|---|
-| `schema_version` | str | – | `"1.0"` |
-| `observation` | Observation | – | the observation as the Guard received it |
-| `queue_estimate` | float | PCU | the queue the controller should use. Equals `queue_pcu` when trusted; the Guard may replace it (e.g. from neighbours) when it isn't |
-| `margin` | float | PCU | ± uncertainty on `queue_estimate` |
-| `trust_state` | str | – | `TRUSTED`, `SUSPECT` or `FAULTY` |
-| `override_flag` | bool | – | true when `queue_estimate` is not the camera's own number |
+| `schema_version` | str | | `"2.0"` (defaults to current if omitted) |
+| `time` | float | s | end of the interval |
+| `interval_s` | float | s | interval length, 1.0 in the simulator, must be > 0 |
+| `junction_id` | str | | must match the corridor map |
+| `approach_id` | str | | incoming approach; SUMO edge id in the simulator |
+| `source` | `sim` / `camera` / `replay` | | producer kind |
+| `zone_length_m` | float | m | how far back from the stop line the producer sees, > 0 |
+| `zone_counts` | ClassCounts | veh | vehicles in the zone at `time` |
+| `queue_counts` | ClassCounts | veh | of those, stopped (speed < 0.1 m/s) |
+| `arrivals` | ClassCounts | veh | entered the zone during the interval |
+| `departures` | {left, straight, right: ClassCounts} | veh | crossed the stop line during the interval, by movement taken |
+| `quality.detector_confidence` | {mean, std} or null | 0-1 | detector scores over the interval |
+| `quality.track_breaks_per_min` | float or null | 1/min | tracks lost and restarted |
+| `quality.image_health` | {frozen, blur, brightness, displacement_px} or null | | blur and brightness 0-1, displacement in pixels |
+| `quality.count_error` | float or null | veh | producer's own error estimate on `zone_counts` |
 
-## Command
+Invariant a producer must keep, per approach:
+`zone_counts(t) = zone_counts(t-1) + arrivals(t) - departures_total(t)`
+(the simulator observer is tested for it; a camera will only approximate it,
+and how badly it fails is evidence for the Guard).
 
-Safety envelope → simulator, and fed back to the Guard and controllers the
-next second. Controllers do **not** produce Commands: they only request a
-green phase, and the envelope turns that into a Command.
+## ApproachState (core: Guard output, controller input)
 
 | field | type | unit | meaning |
 |---|---|---|---|
-| `schema_version` | str | – | `"1.0"` |
-| `time` | float | s | when this Command applies |
-| `junction_id` | str | – | e.g. `"J1"` |
-| `phase_index` | int | – | phase whose approaches are lit: the green phase, or the phase being cleared during yellow/all-red. Phase 0 = main road, 1 = side street on the placeholder corridor |
-| `phase_started_at` | float | s | when the current `stage` began |
-| `controller_name` | str | – | which controller was in charge, e.g. `"fixed"` |
-| `stage` | str | – | `green`, `yellow` or `all_red` |
-| `target_phase` | int | – | phase being switched to (equals `phase_index` when settled) |
-| `requested_phase` | int or null | – | what the controller asked for this second, null if nothing |
-| `intervention` | str or null | – | set when the envelope didn't do what was asked: `min_green`, `max_red` or `invalid_request` |
+| `time`, `junction_id`, `approach_id` | | | as the measurement |
+| `measured_queue_pcu` | float | PCU | `queue_counts` weighted |
+| `queue_estimate` | float | PCU | what controllers use; equals measured when trusted |
+| `margin` | float | PCU | +/- uncertainty on the estimate |
+| `trust_state` | `TRUSTED` / `SUSPECT` / `FAULTY` | | Guard verdict |
+| `override_flag` | bool | | estimate is not the measured value |
+| `arrivals_pcu`, `departures_pcu` | float | PCU | weighted flows this interval |
+| `exits_to` | {junction: int} | veh | departures heading to each neighbour; every neighbour key present |
 
-Signal for an approach under a Command: green if `stage == green` and the
-approach is in `phase_index`'s phase, yellow if `stage == yellow` and it is,
-red otherwise (`Junction.light` in `schemas/corridor.py`).
+## Command (envelope -> signals)
 
-## Corridor map (`sim/net/corridor.json`)
+| field | type | meaning |
+|---|---|---|
+| `time` | float | second this applies to |
+| `junction_id` | str | |
+| `phase_index` | int | phase lit: the green one, or the one being cleared |
+| `phase_started_at` | float | when the current stage began |
+| `controller_name` | str | `fixed`, `maxpressure`, ... |
+| `stage` | `green` / `yellow` / `all_red` | |
+| `target_phase` | int | phase being switched to; equals `phase_index` when settled |
+| `requested_phase` | int or null | controller wish this second |
+| `intervention` | `min_green` / `max_red` / `invalid_request` or null | set when the envelope overrode the wish |
 
-Not a message but shared by everyone: junctions, their approaches, which
-approaches each phase serves, which approach feeds which (`downstream`), and
-the signal link order SUMO uses. It's static map knowledge, so the Guard and
-controllers may read it. Loaded by `schemas/corridor.py`.
+Light for an approach: green if `stage == green` and the approach is in
+`phase_index`'s phase, yellow if `stage == yellow` and it is, red otherwise.
+
+## Corridor (static map, `data/net/corridor.json`)
+
+| field | meaning |
+|---|---|
+| `junctions[]` | `id`, `phases` (phase -> approaches that get green), `links` (SUMO signal link order: approach + direction code) |
+| `approaches[]` | `id`, `junction`, `length_m`, `lanes`, `movements` {left, straight, right: edge or null} |
+| `entries[]` | edges where traffic enters: `edge`, `kind` (main/side), `through_exit` |
+| `exits[]` | edges where traffic leaves: `edge`, `kind` |
+
+Derived in the core, never stored: which approach a movement feeds, the
+downstream approach for max-pressure, neighbouring junctions.
+
+## CoreConfig
+
+`pcu` (weights per class), `timing` (`min_green_s`, `max_red_s`, `yellow_s`,
+`all_red_s`), `controller` (`{"kind": "fixed", "green_s": [...]}` or
+`{"kind": "maxpressure"}`), `guard` (`{"kind": "passthrough"}`, default).
+The core refuses `max_red_s < min_green_s + yellow_s + 2 * all_red_s`, a fixed
+plan whose length differs from a junction's phase count, and non-positive weights.
+
+## StepOutput
+
+`states` (ApproachState per measured approach, corridor order), `requests`
+(controller wish per junction, before the envelope), `commands` (one per junction).
+
+## Changes from v1
+
+- `Observation` -> `Measurement`; `queue_pcu` -> raw `queue_counts`; PCU moves to the core.
+- `exits_to` removed from the producer; derived in the core from `departures`.
+- New: `zone_length_m`, `zone_counts`, `arrivals`, `departures`, `interval_s`, `quality` block.
+- `RatedObservation` -> `ApproachState` (flat, no embedded observation).
+- `image_health.displacement` -> `displacement_px`; `error_margin` -> `quality.count_error`.
+- Corridor map: lists instead of maps, approaches carry length, lanes and movements.

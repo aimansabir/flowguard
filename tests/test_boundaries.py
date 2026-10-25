@@ -11,6 +11,7 @@ import tomllib
 from pathlib import Path
 
 import pytest
+
 from flowguard_sim.paths import ROOT
 
 SIM = {"traci", "sumolib", "libsumo", "sumo", "flowguard_sim"}

@@ -6,7 +6,6 @@ state where green links come from more than one phase.
 """
 
 from flowguard_contracts import Command, Corridor, Junction
-
 from flowguard_sim.corridor import junctions_by_id, light
 
 

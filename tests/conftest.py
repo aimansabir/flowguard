@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pytest
+
 from flowguard_contracts import Corridor
 from flowguard_sim.corridor import load_corridor
 from flowguard_sim.paths import ROOT

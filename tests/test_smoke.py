@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+
 from flowguard_sim.run import run
 
 LOGS = ["truth.jsonl", "measurements.jsonl", "states.jsonl", "commands.jsonl", "tripinfo.xml", "summary.json"]

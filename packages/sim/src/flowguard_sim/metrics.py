@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Any
 
 from flowguard_contracts import ClassCounts, Command, Corridor, Measurement
-
 from flowguard_sim.corridor import approaches_of, junctions_by_id, light
 
 

@@ -16,7 +16,6 @@ import subprocess
 from typing import Any
 
 from flowguard_contracts import Corridor
-
 from flowguard_sim.paths import ROOT
 from flowguard_sim.sumo_env import sumo_binary
 

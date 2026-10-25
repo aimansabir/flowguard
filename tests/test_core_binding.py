@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+
 from flowguard_contracts import VEHICLE_CLASSES, Corridor, StepOutput
 from flowguard_core import Core
 from flowguard_sim.run import core_config

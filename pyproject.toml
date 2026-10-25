@@ -36,3 +36,6 @@ include = ["packages", "tests", "scripts"]
 exclude = ["**/models.py", "**/.venv", "target"]
 pythonVersion = "3.12"
 typeCheckingMode = "strict"
+
+[tool.ruff.lint.isort]
+known-first-party = ["flowguard_contracts", "flowguard_core", "flowguard_sim", "flowguard_vision"]

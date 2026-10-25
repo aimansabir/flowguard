@@ -17,9 +17,9 @@ second, split by the movement their route takes next.
 from dataclasses import dataclass, field
 
 import traci
-from flowguard_contracts import Corridor, Measurement
 from traci import constants as tc
 
+from flowguard_contracts import Corridor, Measurement
 from flowguard_sim.corridor import approaches_of
 
 HALT_SPEED = 0.1  # m/s, same threshold SUMO uses for "halting"
