@@ -1,0 +1,8 @@
+{
+  "_note": "Webster fixed-time plan (docs/decisions.md D21), used by --controller fixed_webster / fixed_webster_wave. Saturation flow and progression speed are PLACEHOLDERS until measured. design_flow: 'peak' (flow at the peak of the hour) or 'mean' (average over the hour).",
+  "saturation_pcu_per_h_per_lane": 1800,
+  "design_flow": "peak",
+  "min_cycle_s": 40,
+  "max_cycle_s": 120,
+  "green_wave": {"entry": "W_J1", "speed_mps": 11.0}
+}

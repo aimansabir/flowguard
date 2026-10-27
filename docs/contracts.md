@@ -85,10 +85,21 @@ downstream approach for max-pressure, neighbouring junctions.
 ## CoreConfig
 
 `pcu` (weights per class), `timing` (`min_green_s`, `max_red_s`, `yellow_s`,
-`all_red_s`), `controller` (`{"kind": "fixed", "green_s": [...]}` or
-`{"kind": "maxpressure"}`), `guard` (`{"kind": "passthrough"}`, default).
+`all_red_s`), `controller`, `guard` (`{"kind": "passthrough"}`, default).
+
+Controllers (all optional fields may be left out or null):
+
+| kind | fields | meaning |
+|---|---|---|
+| `fixed` | `green_s` [s per phase] | same plan at every junction |
+| | `offsets_s` {junction: s} | start that junction's plan later (green wave, D21); missing = 0 |
+| `maxpressure` | (none) | basic max-pressure (D12) |
+| | `hysteresis` {`gain_pcu`} | hold min green, switch only for a pressure gain above `gain_pcu` PCU (D20) |
+| | `capacity` {`jam_spacing_m`, `spillback_occupancy`} | storage = length x lanes / jam spacing; an approach whose downstream holds at least `spillback_occupancy` of its storage adds no positive pressure (D22) |
 The core refuses `max_red_s < min_green_s + yellow_s + 2 * all_red_s`, a fixed
-plan whose length differs from a junction's phase count, and non-positive weights.
+plan whose length differs from a junction's phase count, an offset for an
+unknown junction, non-positive weights, a negative `gain_pcu`, and capacity
+settings outside `jam_spacing_m > 0`, `0 < spillback_occupancy <= 1`.
 
 ## StepOutput
 

@@ -746,7 +746,7 @@
       "oneOf": [
         {
           "title": "FixedControllerConfig",
-          "description": "Fixed-time plan: green seconds per phase, same at every junction.",
+          "description": "Fixed-time plan: green seconds per phase, same at every junction.\n`offsets_s` shifts a junction's plan later by that many seconds\n(green wave); junctions left out have offset 0 (D21).",
           "type": "object",
           "properties": {
             "kind": {
@@ -756,6 +756,16 @@
             "green_s": {
               "type": "array",
               "items": {
+                "type": "number",
+                "format": "double"
+              }
+            },
+            "offsets_s": {
+              "type": [
+                "object",
+                "null"
+              ],
+              "additionalProperties": {
                 "type": "number",
                 "format": "double"
               }
@@ -769,19 +779,75 @@
         },
         {
           "title": "MaxPressureControllerConfig",
-          "description": "Basic max-pressure, re-decided every second.",
+          "description": "Max-pressure, re-decided every second. Without `hysteresis` this is the\nbasic version (D12); with it, greens are held for min green and only\ngiven up for a clear pressure gain (D20).",
           "type": "object",
           "properties": {
             "kind": {
               "type": "string",
               "const": "maxpressure"
+            },
+            "hysteresis": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Hysteresis"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "capacity": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Capacity"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             }
           },
+          "additionalProperties": false,
           "required": [
             "kind"
-          ],
-          "additionalProperties": false
+          ]
         }
+      ]
+    },
+    "Hysteresis": {
+      "description": "Switching damper for max-pressure.",
+      "type": "object",
+      "properties": {
+        "gain_pcu": {
+          "description": "Switch only when the best phase beats the current one by more than\nthis, PCU. 0 = any strict gain.",
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "gain_pcu"
+      ]
+    },
+    "Capacity": {
+      "description": "Spillback protection for max-pressure (D22): an approach adds no\npositive pressure while the approach it feeds is nearly full.",
+      "type": "object",
+      "properties": {
+        "jam_spacing_m": {
+          "description": "Road length one queued PCU takes, m. Storage of an approach =\nlength_m x lanes / jam_spacing_m, in PCU.",
+          "type": "number",
+          "format": "double"
+        },
+        "spillback_occupancy": {
+          "description": "Occupancy (queue / storage, 0-1) at or above which an approach is\ntreated as full.",
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "jam_spacing_m",
+        "spillback_occupancy"
       ]
     },
     "GuardConfig": {

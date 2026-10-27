@@ -384,12 +384,47 @@ pub struct SignalTiming {
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ControllerConfig {
     /// Fixed-time plan: green seconds per phase, same at every junction.
+    /// `offsets_s` shifts a junction's plan later by that many seconds
+    /// (green wave); junctions left out have offset 0 (D21).
     #[schemars(title = "FixedControllerConfig")]
-    Fixed { green_s: Vec<f64> },
-    /// Basic max-pressure, re-decided every second.
+    Fixed {
+        green_s: Vec<f64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        offsets_s: Option<BTreeMap<String, f64>>,
+    },
+    /// Max-pressure, re-decided every second. Without `hysteresis` this is the
+    /// basic version (D12); with it, greens are held for min green and only
+    /// given up for a clear pressure gain (D20).
     #[serde(rename = "maxpressure")]
     #[schemars(title = "MaxPressureControllerConfig")]
-    MaxPressure,
+    MaxPressure {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        hysteresis: Option<Hysteresis>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        capacity: Option<Capacity>,
+    },
+}
+
+/// Spillback protection for max-pressure (D22): an approach adds no
+/// positive pressure while the approach it feeds is nearly full.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Capacity {
+    /// Road length one queued PCU takes, m. Storage of an approach =
+    /// length_m x lanes / jam_spacing_m, in PCU.
+    pub jam_spacing_m: f64,
+    /// Occupancy (queue / storage, 0-1) at or above which an approach is
+    /// treated as full.
+    pub spillback_occupancy: f64,
+}
+
+/// Switching damper for max-pressure.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Hysteresis {
+    /// Switch only when the best phase beats the current one by more than
+    /// this, PCU. 0 = any strict gain.
+    pub gain_pcu: f64,
 }
 
 /// Which Guard rates the measurements.
@@ -465,8 +500,13 @@ mod tests {
     #[test]
     fn controller_config_is_tagged() {
         let f: ControllerConfig = serde_json::from_str(r#"{"kind":"fixed","green_s":[40,20]}"#).unwrap();
-        assert_eq!(f, ControllerConfig::Fixed { green_s: vec![40.0, 20.0] });
+        assert_eq!(f, ControllerConfig::Fixed { green_s: vec![40.0, 20.0], offsets_s: None });
+        assert_eq!(serde_json::to_string(&f).unwrap(), r#"{"kind":"fixed","green_s":[40.0,20.0]}"#);
         let m: ControllerConfig = serde_json::from_str(r#"{"kind":"maxpressure"}"#).unwrap();
-        assert_eq!(m, ControllerConfig::MaxPressure);
+        assert_eq!(m, ControllerConfig::MaxPressure { hysteresis: None, capacity: None });
+        let h: ControllerConfig =
+            serde_json::from_str(r#"{"kind":"maxpressure","hysteresis":{"gain_pcu":2}}"#).unwrap();
+        assert_eq!(h, ControllerConfig::MaxPressure { hysteresis: Some(Hysteresis { gain_pcu: 2.0 }), capacity: None });
+        assert_eq!(serde_json::to_string(&m).unwrap(), r#"{"kind":"maxpressure"}"#);
     }
 }

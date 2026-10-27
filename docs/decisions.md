@@ -203,3 +203,59 @@ Disk space on the dev machine is tight, so Rust uses the
 carry no debug info; release builds are stripped. Plain `cargo` commands
 target only the core (`default-members`); the binding builds through
 `uv sync`.
+
+## D20. Max-pressure hysteresis is an option, not a new controller (2026-10-27)
+`ControllerConfig::MaxPressure` gets an optional `hysteresis: {gain_pcu}`.
+Absent (`{"kind": "maxpressure"}`, the old JSON): the basic version of D12,
+unchanged, so the parity result and earlier runs still reproduce. Present:
+the controller asks for the current phase while a change is under way or the
+green has not run min green (read from the last Command, the envelope's own
+timing), then asks for the best phase only if its pressure beats the current
+phase's by more than `gain_pcu`; ties and gains at or below the threshold
+keep the current phase. Controller name `maxpressure_hyst`, so logs say which
+ran. The later control items (C2-C4) are meant to stack as further options on
+the same controller instead of multiplying variants. `make_controller` now
+gets the whole `SignalTiming`, because the controller needs `min_green_s`.
+Schema version stays 2.0: the field is optional, and an old reader rejects it
+(unknown field) rather than misreading it.
+Default `gain_pcu` = 8 (config/maxpressure.json), from a 3-seed sweep
+(docs/results.md, 2026-10-27): the largest gain with max-red interventions
+near zero. Larger gains lower delay further but only by holding the main
+road until the envelope forces max red. Would change: a 10-seed sweep on
+seeds not used for tuning, or a different corridor/camera zone.
+
+## D21. Webster plan is computed in Python and handed to the core as `fixed` (2026-10-27)
+The core never sees demand (architecture boundary 2), so
+`flowguard_sim/webster.py` works the plan out from config/demand.json,
+config/pcu.json, config/signal.json and config/webster.json, and passes it as
+an ordinary `fixed` config. Steps: design flow per approach by routing every
+entry's destinations through the corridor map (fewest junctions); flow ratio
+y per phase = highest flow per lane / saturation flow, over every junction,
+because the contract has one plan for all junctions; lost time = one yellow +
+all-red per phase; C = (1.5 L + 5) / (1 - Y) clamped to [40, 120] s; greens
+split C - L by y, rounded, at least min green; plan refused if a phase would
+be red longer than max red. Design flow is the peak of the hour by default
+(`design_flow`), the usual choice for a fixed plan that must survive the peak.
+Placeholders: saturation 1800 PCU/h/lane and progression speed 11 m/s.
+The green wave is new contract field `offsets_s` on `fixed` (optional,
+junction -> s): a junction asks at time t for what the plan says at
+t - offset. Offsets follow one direction (eastbound from W_J1); a two-way
+wave on a 45 s cycle isn't possible with these spacings. No offsets = the
+old behaviour, byte for byte (same results in docs/results.md).
+Would change: per-junction plans (contract change), measured saturation
+flow, or a real corridor with different spacings.
+
+## D22. Capacity-aware max-pressure is a spillback gate, in PCU (2026-10-27)
+`maxpressure` gets an optional `capacity: {jam_spacing_m,
+spillback_occupancy}`. Storage of an approach = length_m x lanes /
+jam_spacing_m, derived in the core from the corridor map. When the approach
+an approach feeds (straight through) holds at least spillback_occupancy of
+its storage, that approach's pressure term becomes min(queue - downstream,
+0): no positive pressure into a nearly full link, but a negative term is
+kept. Not the full normalised form of Gregoire et al. 2015: pressure stays in
+PCU so the hysteresis gain (D20) means the same with or without the gate,
+and the options stack (`maxpressure_hyst_cap`). Name suffixes `_hyst`,
+`_cap` show which options ran. On the placeholder corridor the gate never
+changes a decision (docs/results.md, 2026-10-27), so its value is still
+unshown. Would change: a spillback scenario where it does fire, or turning
+movements (C2), where the downstream of a turn is a different link.

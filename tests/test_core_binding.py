@@ -66,3 +66,18 @@ def test_fixed_plan_through_core(corridor_path: Path) -> None:
     assert stages[39] == (0, "green") and stages[40] == (0, "yellow")
     assert stages[43] == (0, "all_red") and stages[45] == (1, "green")
     assert stages[65] == (1, "yellow") and stages[70] == (0, "green")
+
+
+def test_hysteresis_config_through_core(corridor_path: Path) -> None:
+    core = make(corridor_path, "maxpressure_hyst")
+    assert core.controller_name == "maxpressure_hyst"
+    # side street far ahead from t = 0: basic max-pressure asks at once, hysteresis waits for min green
+    side = [measurement("N1_J1", "J1", 20)]
+    first = StepOutput.model_validate_json(core.step(0.0, json.dumps(side)))
+    assert first.requests["J1"] == 0
+    basic = StepOutput.model_validate_json(make(corridor_path).step(0.0, json.dumps(side)))
+    assert basic.requests["J1"] == 1
+    bad = json.loads(core_config("maxpressure_hyst").model_dump_json())
+    bad["controller"]["hysteresis"]["gain_pcu"] = -1
+    with pytest.raises(ValueError, match="gain_pcu"):
+        Core(corridor_path.read_text(), json.dumps(bad))

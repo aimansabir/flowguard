@@ -26,6 +26,7 @@ from pydantic import BaseModel
 
 from flowguard_contracts import ClassCounts, CoreConfig, StepOutput
 from flowguard_core import Core
+from flowguard_sim import webster
 from flowguard_sim.corridor import load_corridor
 from flowguard_sim.demand import ensure_demand
 from flowguard_sim.faults import FaultInjector
@@ -35,16 +36,24 @@ from flowguard_sim.paths import ROOT, load_json, without_notes
 from flowguard_sim.signals import SignalApplier
 from flowguard_sim.sumo_env import sumo_binary
 
-CONTROLLERS = ("fixed", "maxpressure")
+CONTROLLERS = ("fixed", "fixed_webster", "fixed_webster_wave",
+               "maxpressure", "maxpressure_hyst", "maxpressure_hyst_cap")
 LOGS = ("truth", "measurements", "states", "commands")
 FROM_CONFIG: Literal["config"] = "config"
 
 
 def core_config(controller: str) -> CoreConfig:
+    mp = load_json("config/maxpressure.json")
     if controller == "fixed":
         ctl: dict[str, Any] = {"kind": "fixed", "green_s": load_json("config/fixed.json")["green_s"]}
+    elif controller in ("fixed_webster", "fixed_webster_wave"):
+        ctl = webster.plan(green_wave=controller == "fixed_webster_wave")
     elif controller == "maxpressure":
         ctl = {"kind": "maxpressure"}
+    elif controller == "maxpressure_hyst":
+        ctl = {"kind": "maxpressure", "hysteresis": mp["hysteresis"]}
+    elif controller == "maxpressure_hyst_cap":
+        ctl = {"kind": "maxpressure", "hysteresis": mp["hysteresis"], "capacity": mp["capacity"]}
     else:
         raise ValueError(f"unknown controller {controller!r}")
     return CoreConfig.model_validate({

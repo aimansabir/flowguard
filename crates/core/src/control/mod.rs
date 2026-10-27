@@ -12,7 +12,7 @@ use std::collections::BTreeMap;
 pub use fixed::FixedTime;
 pub use maxpressure::MaxPressure;
 
-use crate::contracts::{ApproachState, Command, ControllerConfig};
+use crate::contracts::{ApproachState, Command, ControllerConfig, SignalTiming};
 use crate::corridor::CorridorIndex;
 use crate::error::Result;
 
@@ -40,9 +40,17 @@ pub trait Controller: Send + Sync {
     fn decide(&mut self, input: &DecisionInput<'_>) -> BTreeMap<String, usize>;
 }
 
-pub fn make_controller(cfg: &ControllerConfig, corridor: &CorridorIndex, clearance_s: f64) -> Result<Box<dyn Controller>> {
+pub fn make_controller(
+    cfg: &ControllerConfig,
+    corridor: &CorridorIndex,
+    timing: &SignalTiming,
+) -> Result<Box<dyn Controller>> {
     Ok(match cfg {
-        ControllerConfig::Fixed { green_s } => Box::new(FixedTime::new(corridor, green_s, clearance_s)?),
-        ControllerConfig::MaxPressure => Box::new(MaxPressure),
+        ControllerConfig::Fixed { green_s, offsets_s } => {
+            Box::new(FixedTime::new(corridor, green_s, &offsets_s.clone().unwrap_or_default(), timing.clearance_s())?)
+        }
+        ControllerConfig::MaxPressure { hysteresis, capacity } => {
+            Box::new(MaxPressure::new(corridor, *hysteresis, *capacity, timing.min_green_s)?)
+        }
     })
 }
