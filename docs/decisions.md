@@ -266,3 +266,54 @@ contract and the Rust code are unchanged.
 - **No scenario** means no change: the injector returns its input as is,
   the observer computes no shifted view and no `faults.jsonl` is written.
   Tested byte-for-byte against a run whose faults never start.
+
+## D24. Guard evidence E1, E2, E5 (G1, 2026-10-27)
+`crates/core/src/guard/evidence.rs` computes three of the five checks of
+docs/specs/guard.md G1 for every approach each second. Each gives a score
+in 0-1 (0 = nothing suspicious) or null when it has nothing to judge. No
+Guard uses them yet: `PassThrough` is unchanged and combining the scores is
+G2, so runs and contracts are unchanged. Parameters live in
+`EvidenceParams` until G2 moves them into `GuardConfig`. Every threshold
+is a placeholder, chosen on the seed-1 runs below; revisit with the error
+levels from the vision evaluation.
+
+- **E1 quality.** Any bad flag the producer reported (image frozen,
+  brightness <= 0.05 or >= 0.95, blur > 0.7, displacement > 20 px, mean
+  detector confidence < 0.3, track breaks > 30/min) scores 0.5, else 0;
+  null when nothing was reported. Capped at 0.5 because a bad image is not
+  proof of bad counts (scope.md), so it can never be full evidence alone.
+  Displacement is not in the spec's list; added because vision reports it
+  (V4) and it is the camera-side sign of a displaced camera. The simulator
+  reports no quality, so E1 is always null in SUMO runs (D23).
+- **E2 frozen counts.** Counts the intervals in which every count vector
+  (zone, queue, arrivals, departures by movement) equals the last
+  measurement received, the approach had green in last second's command, and
+  the measurement should have changed: vehicles in the zone, or an upstream
+  approach sent vehicles toward it in the last 60 s. Score = count / 20 s,
+  capped at 1. A change resets the count; red, yellow, an empty zone with no
+  supply, and a missing measurement hold it, so a camera frozen across
+  several cycles keeps building evidence over its green seconds. A standing
+  queue (all stopped, nothing in or out) caps the score at 0.5: a blocked
+  exit gives exactly that under green. In the clean fixed-time run a
+  spillback held S2_J2 at 11 stopped vehicles for 45 s of green, which
+  scored 1 before the cap. Entry approaches get no supply, so an all-zero
+  blackout there is indistinguishable from an empty road.
+- **E5 internal consistency.** Residual per interval
+  `zone(t) - zone(t-1) - arrivals(t) + departures(t)` (vehicles, 0 for the
+  simulator by D16), only between consecutive measurements; a gap clears the
+  history. Residuals are summed over sliding 5-interval blocks, so a vehicle
+  reported up to a few seconds late cancels out (vision V3 allows late
+  departures). Score = (mean |block sum| over the last 60 intervals - 1) / 1,
+  clamped to 0-1; null until 30 consecutive intervals. Undercount and
+  displaced break it; freeze only when its repeated arrivals and departures
+  differ; blackout only at onset. Evidence persists for up to the window
+  after a fault ends.
+- **Calibration** (Python replica of the same logic over logged runs:
+  maxpressure and fixed clean, maxpressure `mixed`, fixed `displaced`, and a
+  scratch scenario with freeze on two entry approaches, blackout on two
+  internal approaches, undercount keep 0.7 and displaced 20 m, under both
+  controllers). Seconds with score 1: clean 0 for E2 and E5, also with
+  synthetic noise (departures 0-3 s late, 5 % one-second zone flicker), apart
+  from E5's tail after a fault ends. E2 freeze 93-97 %, internal blackout
+  81-92 %. E5 undercount keep 0.4 88 %, keep 0.7 16-36 %; displaced 40 m
+  19-64 %, 20 m 0-13 %; at score >= 0.5 these rise to 59-99 % and 8-87 %.

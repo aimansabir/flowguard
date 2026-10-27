@@ -1,6 +1,8 @@
 //! The Guard decides how far each approach can be trusted and, when it can
 //! not, what queue the controller should use instead. See docs/specs/guard.md.
 
+pub mod evidence;
+
 use crate::contracts::{ApproachState, Command, Measurement};
 use crate::corridor::CorridorIndex;
 
