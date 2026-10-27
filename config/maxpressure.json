@@ -1,0 +1,5 @@
+{
+  "_note": "Max-pressure options: hysteresis (docs/decisions.md D20) and capacity (D22). Used by --controller maxpressure_hyst (hysteresis) and maxpressure_hyst_cap (both); plain maxpressure stays the basic version. gain_pcu: switch only when the best phase beats the current one by more than this many PCU. capacity (D22): an approach adds no positive pressure while the approach it feeds holds at least spillback_occupancy x (length x lanes / jam_spacing_m) PCU. jam_spacing_m is a PLACEHOLDER.",
+  "hysteresis": {"gain_pcu": 8},
+  "capacity": {"jam_spacing_m": 7.5, "spillback_occupancy": 0.9}
+}

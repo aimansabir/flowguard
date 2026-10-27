@@ -1,0 +1,428 @@
+{
+  "schema_version": "2.0",
+  "junctions": [
+    {
+      "id": "J1",
+      "phases": [
+        [
+          "J2_J1",
+          "W_J1"
+        ],
+        [
+          "N1_J1",
+          "S1_J1"
+        ]
+      ],
+      "links": [
+        {
+          "approach": "N1_J1",
+          "direction": "r"
+        },
+        {
+          "approach": "N1_J1",
+          "direction": "s"
+        },
+        {
+          "approach": "N1_J1",
+          "direction": "l"
+        },
+        {
+          "approach": "J2_J1",
+          "direction": "r"
+        },
+        {
+          "approach": "J2_J1",
+          "direction": "s"
+        },
+        {
+          "approach": "J2_J1",
+          "direction": "s"
+        },
+        {
+          "approach": "J2_J1",
+          "direction": "l"
+        },
+        {
+          "approach": "S1_J1",
+          "direction": "r"
+        },
+        {
+          "approach": "S1_J1",
+          "direction": "s"
+        },
+        {
+          "approach": "S1_J1",
+          "direction": "l"
+        },
+        {
+          "approach": "W_J1",
+          "direction": "r"
+        },
+        {
+          "approach": "W_J1",
+          "direction": "s"
+        },
+        {
+          "approach": "W_J1",
+          "direction": "s"
+        },
+        {
+          "approach": "W_J1",
+          "direction": "l"
+        }
+      ]
+    },
+    {
+      "id": "J2",
+      "phases": [
+        [
+          "J1_J2",
+          "J3_J2"
+        ],
+        [
+          "N2_J2",
+          "S2_J2"
+        ]
+      ],
+      "links": [
+        {
+          "approach": "N2_J2",
+          "direction": "r"
+        },
+        {
+          "approach": "N2_J2",
+          "direction": "s"
+        },
+        {
+          "approach": "N2_J2",
+          "direction": "l"
+        },
+        {
+          "approach": "J3_J2",
+          "direction": "r"
+        },
+        {
+          "approach": "J3_J2",
+          "direction": "s"
+        },
+        {
+          "approach": "J3_J2",
+          "direction": "s"
+        },
+        {
+          "approach": "J3_J2",
+          "direction": "l"
+        },
+        {
+          "approach": "S2_J2",
+          "direction": "r"
+        },
+        {
+          "approach": "S2_J2",
+          "direction": "s"
+        },
+        {
+          "approach": "S2_J2",
+          "direction": "l"
+        },
+        {
+          "approach": "J1_J2",
+          "direction": "r"
+        },
+        {
+          "approach": "J1_J2",
+          "direction": "s"
+        },
+        {
+          "approach": "J1_J2",
+          "direction": "s"
+        },
+        {
+          "approach": "J1_J2",
+          "direction": "l"
+        }
+      ]
+    },
+    {
+      "id": "J3",
+      "phases": [
+        [
+          "E_J3",
+          "J2_J3"
+        ],
+        [
+          "N3_J3",
+          "S3_J3"
+        ]
+      ],
+      "links": [
+        {
+          "approach": "N3_J3",
+          "direction": "r"
+        },
+        {
+          "approach": "N3_J3",
+          "direction": "s"
+        },
+        {
+          "approach": "N3_J3",
+          "direction": "l"
+        },
+        {
+          "approach": "E_J3",
+          "direction": "r"
+        },
+        {
+          "approach": "E_J3",
+          "direction": "s"
+        },
+        {
+          "approach": "E_J3",
+          "direction": "s"
+        },
+        {
+          "approach": "E_J3",
+          "direction": "l"
+        },
+        {
+          "approach": "S3_J3",
+          "direction": "r"
+        },
+        {
+          "approach": "S3_J3",
+          "direction": "s"
+        },
+        {
+          "approach": "S3_J3",
+          "direction": "l"
+        },
+        {
+          "approach": "J2_J3",
+          "direction": "r"
+        },
+        {
+          "approach": "J2_J3",
+          "direction": "s"
+        },
+        {
+          "approach": "J2_J3",
+          "direction": "s"
+        },
+        {
+          "approach": "J2_J3",
+          "direction": "l"
+        }
+      ]
+    }
+  ],
+  "approaches": [
+    {
+      "id": "J2_J1",
+      "junction": "J1",
+      "length_m": 285.0,
+      "lanes": 2,
+      "movements": {
+        "left": "J1_S1",
+        "straight": "J1_W",
+        "right": "J1_N1"
+      }
+    },
+    {
+      "id": "W_J1",
+      "junction": "J1",
+      "length_m": 292.5,
+      "lanes": 2,
+      "movements": {
+        "left": "J1_N1",
+        "straight": "J1_J2",
+        "right": "J1_S1"
+      }
+    },
+    {
+      "id": "N1_J1",
+      "junction": "J1",
+      "length_m": 189.6,
+      "lanes": 1,
+      "movements": {
+        "left": "J1_J2",
+        "straight": "J1_S1",
+        "right": "J1_W"
+      }
+    },
+    {
+      "id": "S1_J1",
+      "junction": "J1",
+      "length_m": 189.6,
+      "lanes": 1,
+      "movements": {
+        "left": "J1_W",
+        "straight": "J1_N1",
+        "right": "J1_J2"
+      }
+    },
+    {
+      "id": "J1_J2",
+      "junction": "J2",
+      "length_m": 285.0,
+      "lanes": 2,
+      "movements": {
+        "left": "J2_N2",
+        "straight": "J2_J3",
+        "right": "J2_S2"
+      }
+    },
+    {
+      "id": "J3_J2",
+      "junction": "J2",
+      "length_m": 285.0,
+      "lanes": 2,
+      "movements": {
+        "left": "J2_S2",
+        "straight": "J2_J1",
+        "right": "J2_N2"
+      }
+    },
+    {
+      "id": "N2_J2",
+      "junction": "J2",
+      "length_m": 189.6,
+      "lanes": 1,
+      "movements": {
+        "left": "J2_J3",
+        "straight": "J2_S2",
+        "right": "J2_J1"
+      }
+    },
+    {
+      "id": "S2_J2",
+      "junction": "J2",
+      "length_m": 189.6,
+      "lanes": 1,
+      "movements": {
+        "left": "J2_J1",
+        "straight": "J2_N2",
+        "right": "J2_J3"
+      }
+    },
+    {
+      "id": "E_J3",
+      "junction": "J3",
+      "length_m": 292.5,
+      "lanes": 2,
+      "movements": {
+        "left": "J3_S3",
+        "straight": "J3_J2",
+        "right": "J3_N3"
+      }
+    },
+    {
+      "id": "J2_J3",
+      "junction": "J3",
+      "length_m": 285.0,
+      "lanes": 2,
+      "movements": {
+        "left": "J3_N3",
+        "straight": "J3_E",
+        "right": "J3_S3"
+      }
+    },
+    {
+      "id": "N3_J3",
+      "junction": "J3",
+      "length_m": 189.6,
+      "lanes": 1,
+      "movements": {
+        "left": "J3_E",
+        "straight": "J3_S3",
+        "right": "J3_J2"
+      }
+    },
+    {
+      "id": "S3_J3",
+      "junction": "J3",
+      "length_m": 189.6,
+      "lanes": 1,
+      "movements": {
+        "left": "J3_J2",
+        "straight": "J3_N3",
+        "right": "J3_E"
+      }
+    }
+  ],
+  "entries": [
+    {
+      "edge": "E_J3",
+      "kind": "main",
+      "through_exit": "J1_W"
+    },
+    {
+      "edge": "N1_J1",
+      "kind": "side",
+      "through_exit": "J1_S1"
+    },
+    {
+      "edge": "N2_J2",
+      "kind": "side",
+      "through_exit": "J2_S2"
+    },
+    {
+      "edge": "N3_J3",
+      "kind": "side",
+      "through_exit": "J3_S3"
+    },
+    {
+      "edge": "S1_J1",
+      "kind": "side",
+      "through_exit": "J1_N1"
+    },
+    {
+      "edge": "S2_J2",
+      "kind": "side",
+      "through_exit": "J2_N2"
+    },
+    {
+      "edge": "S3_J3",
+      "kind": "side",
+      "through_exit": "J3_N3"
+    },
+    {
+      "edge": "W_J1",
+      "kind": "main",
+      "through_exit": "J3_E"
+    }
+  ],
+  "exits": [
+    {
+      "edge": "J1_N1",
+      "kind": "side"
+    },
+    {
+      "edge": "J1_S1",
+      "kind": "side"
+    },
+    {
+      "edge": "J1_W",
+      "kind": "main"
+    },
+    {
+      "edge": "J2_N2",
+      "kind": "side"
+    },
+    {
+      "edge": "J2_S2",
+      "kind": "side"
+    },
+    {
+      "edge": "J3_E",
+      "kind": "main"
+    },
+    {
+      "edge": "J3_N3",
+      "kind": "side"
+    },
+    {
+      "edge": "J3_S3",
+      "kind": "side"
+    }
+  ]
+}

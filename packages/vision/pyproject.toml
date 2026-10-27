@@ -1,0 +1,13 @@
+[project]
+name = "flowguard-vision"
+version = "0.2.0"
+description = "Camera -> Measurement pipeline for FlowGuard. Depends on the contracts only."
+requires-python = ">=3.12"
+dependencies = ["flowguard-contracts"]
+
+[tool.uv.sources]
+flowguard-contracts = { workspace = true }
+
+[build-system]
+requires = ["uv_build>=0.11,<0.12"]
+build-backend = "uv_build"

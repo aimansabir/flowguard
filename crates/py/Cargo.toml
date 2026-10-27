@@ -1,0 +1,15 @@
+[package]
+name = "flowguard-py"
+description = "Python bindings for flowguard-core"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "flowguard_core"
+crate-type = ["cdylib"]
+
+[dependencies]
+fg = { package = "flowguard-core", path = "../core" }
+serde_json.workspace = true
+# generate-import-lib: build against CPython on Windows with the GNU toolchain, no Visual Studio needed
+pyo3 = { version = "0.27", features = ["extension-module", "abi3-py312", "generate-import-lib"] }
