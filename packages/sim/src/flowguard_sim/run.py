@@ -1,6 +1,7 @@
 """Run one closed-loop simulation.
 
     uv run python -m flowguard_sim.run --controller fixed --seconds 3600 --seed 1
+    uv run python -m flowguard_sim.run --controller fixed --faults freeze   # config/faults/freeze.json
 
 Each second: SUMO -> observer -> fault hook -> core (Guard -> controller ->
 envelope) -> SUMO. Logged to results/<run_id>/:
@@ -8,6 +9,7 @@ envelope) -> SUMO. Logged to results/<run_id>/:
   measurements.jsonl  camera-zone Measurements as the core received them (after faults)
   states.jsonl        core ApproachStates (Guard output)
   commands.jsonl      envelope Commands
+  faults.jsonl        with --faults only: active fault kind (or null) per approach-second
   tripinfo.xml, sumo.log, summary.json
 """
 # pyright: basic
@@ -28,7 +30,7 @@ from flowguard_contracts import ClassCounts, CoreConfig, StepOutput
 from flowguard_core import Core
 from flowguard_sim.corridor import load_corridor
 from flowguard_sim.demand import ensure_demand
-from flowguard_sim.faults import FaultInjector
+from flowguard_sim.faults import FaultInjector, load_scenario
 from flowguard_sim.metrics import RunMetrics
 from flowguard_sim.observer import SimObserver
 from flowguard_sim.paths import ROOT, load_json, without_notes
@@ -59,9 +61,11 @@ def _jsonl(records: list[BaseModel]) -> str:
 
 
 def run(controller: str, seconds: int, seed: int, results_dir: Path = ROOT / "results",
-        camera_zone_m: float | None | Literal["config"] = FROM_CONFIG) -> dict[str, Any]:
+        camera_zone_m: float | None | Literal["config"] = FROM_CONFIG,
+        faults: str | None = None) -> dict[str, Any]:
     """camera_zone_m: metres the simulated camera sees; None = the whole edge;
-    FROM_CONFIG = take it from config/sim.json."""
+    FROM_CONFIG = take it from config/sim.json. faults: scenario name in
+    config/faults/, None = clean camera."""
     if seconds <= 0:
         raise ValueError("seconds must be > 0")
     sim_cfg = load_json("config/sim.json")
@@ -69,17 +73,18 @@ def run(controller: str, seconds: int, seed: int, results_dir: Path = ROOT / "re
     corridor_path = ROOT / sim_cfg["corridor_file"]
     corridor = load_corridor(corridor_path)
     demand = ensure_demand(seed, corridor, load_json("config/demand.json"), ROOT / sim_cfg["demand_dir"])
+    injector = FaultInjector(load_scenario(faults, corridor, zone) if faults else None)
 
     core = Core(corridor_path.read_text(), core_config(controller).model_dump_json())
     zone_tag = "full" if zone is None else f"{zone:g}m"
-    run_id = f"{controller}_seed{seed}_{seconds}s_{zone_tag}_{datetime.now():%Y%m%d-%H%M%S-%f}"
+    fault_tag = f"_{faults}" if faults else ""
+    run_id = f"{controller}_seed{seed}_{seconds}s_{zone_tag}{fault_tag}_{datetime.now():%Y%m%d-%H%M%S-%f}"
     out = Path(results_dir) / run_id
     out.mkdir(parents=True)
 
     def pcu(counts: ClassCounts) -> float:
         return core.pcu(counts.model_dump_json())
 
-    faults = FaultInjector()
     metrics = RunMetrics(corridor, pcu)
     traci.start([
         sumo_binary("sumo"),
@@ -95,20 +100,26 @@ def run(controller: str, seconds: int, seed: int, results_dir: Path = ROOT / "re
         "--log", str(out / "sumo.log"),
         "--no-step-log", "true",
     ])
-    observer = SimObserver(corridor, zone)
+    observer = SimObserver(corridor, zone, shifted=injector.shifts())
     signals = SignalApplier(corridor)
     departed = teleports = collisions = 0
 
     with ExitStack() as stack:
         stack.callback(traci.close)
         logs: dict[str, TextIO] = {
-            k: stack.enter_context(open(out / f"{k}.jsonl", "w", encoding="utf-8")) for k in LOGS
+            k: stack.enter_context(open(out / f"{k}.jsonl", "w", encoding="utf-8"))
+            for k in LOGS + (("faults",) if faults else ())
         }
         for _ in range(seconds):
             t = cast(float, traci.simulation.getTime())
             view, truth = observer.observe(t)
             metrics.add_truth(truth)
-            seen = faults.apply(t, view)
+            seen = injector.apply(t, view, observer.shifted_view)
+            if faults:
+                logs["faults"].write("".join(
+                    json.dumps({"time": t, "approach_id": m.approach_id,
+                                "fault": injector.active_kind(t, m.approach_id)}) + "\n"
+                    for m in view))
             batch = "[" + ",".join(m.model_dump_json() for m in seen) + "]"
             step = StepOutput.model_validate_json(core.step(t, batch))
             signals.apply(step.commands)
@@ -131,6 +142,7 @@ def run(controller: str, seconds: int, seed: int, results_dir: Path = ROOT / "re
         "run_id": run_id,
         "controller": controller,
         "guard": core.guard_name,
+        "faults": faults,
         "seed": seed,
         "seconds": seconds,
         "camera_zone_m": zone,
@@ -168,6 +180,8 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--full-edge", action="store_true",
                         help="simulated camera sees the whole approach edge (v1 behaviour)")
+    parser.add_argument("--faults", metavar="SCENARIO",
+                        help="fault scenario name in config/faults/ (default: no faults)")
     args = parser.parse_args()
     print_summary(run(args.controller, args.seconds, args.seed,
-                      camera_zone_m=None if args.full_edge else FROM_CONFIG))
+                      camera_zone_m=None if args.full_edge else FROM_CONFIG, faults=args.faults))

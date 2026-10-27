@@ -79,6 +79,22 @@ Demand per seed is generated once into `data/demand/` and reused, so every
 controller sees the same vehicles. Rebuild the network after editing
 `data/net/*.nod.xml` / `*.edg.xml`: `uv run python -m flowguard_sim.build_net`.
 
+## Camera faults
+
+`--faults <name>` corrupts what the core receives using the scenario
+`config/faults/<name>.json` (freeze, blackout, undercount, dropout,
+displaced; format in docs/specs/guard.md G0, behaviour in docs/decisions.md D23):
+
+```
+uv run python -m flowguard_sim.run --controller maxpressure --seconds 300 --seed 1 --faults smoke
+uv run python -m flowguard_sim.run --controller maxpressure --seconds 3600 --seed 1 --faults mixed
+```
+
+`smoke` has every kind inside the first 300 s; `mixed` is the spec example.
+A fault run also writes `faults.jsonl`: the active fault kind (or null) per
+approach per second, the ground truth for scoring the Guard. Without
+`--faults` nothing changes.
+
 ## Checks
 
 ```

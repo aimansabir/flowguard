@@ -203,3 +203,66 @@ Disk space on the dev machine is tight, so Rust uses the
 carry no debug info; release builds are stripped. Plain `cargo` commands
 target only the core (`default-members`); the binding builds through
 `uv sync`.
+
+## D23. Fault injector semantics (G0, 2026-10-27)
+(D20-D22 are used on the control branch.) `flowguard_sim/faults.py`
+implements the five faults of docs/specs/guard.md G0 between the observer
+and the core. The core only ever receives ordinary Measurements, so the
+contract and the Rust code are unchanged.
+
+- **Windows.** A fault is active for `start_s <= t < end_s`, `t` being the
+  SUMO time of the observation. Two faults on the same approach may not
+  overlap (back-to-back is fine), so each approach-second has at most one
+  fault kind.
+- **freeze.** The camera repeats the last measurement it produced before
+  the fault (the uncorrupted one), whole: zone and queue counts, arrivals,
+  departures and `quality`; only `time` advances. If the run starts frozen,
+  the first measurement is repeated. `image_health` stays as the camera
+  reports it (null in the simulator), so the Guard gets no frozen flag for
+  free. Repeated arrivals and departures with a constant zone break the
+  conservation invariant (D16); a real frozen pipeline might report zero
+  flow instead. Revisit if the vision pipeline shows how its tracker behaves
+  on a frozen frame.
+- **blackout.** The measurement still arrives with every count zero (zone,
+  queue, arrivals, all departures); `quality` is unchanged.
+- **undercount.** Every class count in zone, queue, arrivals and each
+  departure movement is thinned independently, Binomial(n, `keep`). So
+  `queue` can exceed `zone` and conservation breaks, which a detector that
+  misses whole vehicles consistently would not do. Revisit with the error
+  levels the vision evaluation measures (scope.md risks).
+- **dropout.** Each second in the window the measurement is missing with
+  probability `p`; the core then has no state for that approach that
+  second. Seconds that did get through are unchanged.
+- **displaced.** The observer counts a second zone of the same length as
+  the camera zone, moved `shift_m` back from the stop line
+  (`SimObserver(shifted=...)`, only for approaches with a displaced fault);
+  during the window that view replaces the camera view. Zone and queue counts
+  and arrivals come from the shifted zone; `zone_length_m` stays the camera's.
+  Departures stay the real stop-line departures, because docs/contracts.md
+  defines `departures` as vehicles that crossed the stop line, and one field
+  meaning differently under one fault would make every consumer check the
+  fault. Consequence: the shifted zone's change no longer equals arrivals
+  minus departures, which is evidence a Guard may use (E5), and a real
+  displaced camera could not see the stop line at all, so this is optimistic.
+  `shift_m + camera zone` must fit on the approach; a full-edge camera
+  cannot be displaced.
+- **Determinism.** Each fault has its own `random.Random` seeded with
+  `"<scenario seed>:<position in the file>"`, so a scenario corrupts the
+  same run the same way every time, and adding a fault does not change the
+  draws of the others (reordering the file does). The run seed is not part
+  of it: across demand seeds the same scenario draws the same numbers.
+  Revisit if multi-seed evaluation needs independent fault draws per seed.
+- **Ground truth.** With `--faults`, `faults.jsonl` has one row per approach
+  per second, `{"time", "approach_id", "fault"}`, with the active kind or
+  null; dropout is logged for its whole window, including seconds that got
+  through (missing seconds are the absent rows of measurements.jsonl). The
+  clean camera view is not logged separately. `summary.json` records
+  `faults` (scenario name or null) and the run id includes the name.
+- **Validation.** Scenario files reject unknown fields and kinds, a missing
+  or stray parameter (`keep` for undercount, `p` for dropout, `shift_m` for
+  displaced, nothing for the others), `keep`/`p` outside 0-1, `shift_m <= 0`,
+  `end_s <= start_s`, unknown approaches, overlapping faults, a shift that does
+  not fit, and two different shifts for one approach.
+- **No scenario** means no change: the injector returns its input as is,
+  the observer computes no shifted view and no `faults.jsonl` is written.
+  Tested byte-for-byte against a run whose faults never start.

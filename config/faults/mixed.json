@@ -1,0 +1,11 @@
+{
+  "_note": "The guard spec example, all five kinds at once.",
+  "seed": 7,
+  "faults": [
+    {"approach": "J1_J2", "kind": "freeze",     "start_s": 900,  "end_s": 1500},
+    {"approach": "W_J1",  "kind": "undercount", "start_s": 600,  "end_s": 2400, "keep": 0.4},
+    {"approach": "N2_J2", "kind": "blackout",   "start_s": 1200, "end_s": 1320},
+    {"approach": "E_J3",  "kind": "dropout",    "start_s": 0,    "end_s": 3600, "p": 0.2},
+    {"approach": "J2_J3", "kind": "displaced",  "start_s": 1800, "end_s": 3600, "shift_m": 40}
+  ]
+}
