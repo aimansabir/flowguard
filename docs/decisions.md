@@ -570,3 +570,53 @@ the Guard documented here. `run.py --guard v1` selects it.
   arrival rate (no time-of-day profile). A FAULTY feeder is replaced by the
   downstream approach's own trusted rate, not by the feeder's virtual
   discharge.
+
+## D27. Guard evaluation semantics (G4, 2026-10-28)
+`flowguard_sim.guard_eval` scores a run's `states.jsonl` against its
+`faults.jsonl` and writes `guard_eval.json` next to them.
+
+- **Samples.** Every approach-second in `faults.jsonl`; truth = the fault
+  kind active on that approach, or clean; decision = the logged
+  `trust_state`, or MISSING when no state was logged (dropout). A run
+  without `faults.jsonl` is all clean, over the approach-seconds with a
+  state. FAULTY is the positive decision; SUSPECT is counted on its own,
+  never folded into either side (the confusion matrix has TRUSTED, SUSPECT,
+  FAULTY and MISSING columns per truth row).
+- **Episodes.** A maximal run of consecutive seconds of one fault kind on
+  one approach; it ends at the first second without it. One that lasts to
+  the end of the log is censored (no end, no recovery). Repeated windows on
+  one approach are separate episodes.
+- **Detection.** Detected = FAULTY at least once inside the episode;
+  detection delay = first FAULTY - start; flag delay = first SUSPECT or
+  FAULTY - start. A verdict after the fault has ended does not count. A
+  fault active from t = 0 starts at the first logged second.
+- **Recovery.** First TRUSTED at or after the end - end (0 if already
+  TRUSTED), skipping seconds without a state; none if never TRUSTED again
+  before the log ends.
+- **False alarms.** Clean approach-seconds with a state rated FAULTY (and
+  SUSPECT or FAULTY) / clean approach-seconds with a state. Also reported
+  outside recovery, i.e. without the seconds between the end of an episode
+  on that approach and its return to TRUSTED, which recovery time already
+  measures. A clean approach downstream of a faulty one is counted as clean
+  (its E3 evidence may still fire: D25).
+- **Dropout** episodes are scored like the others but the Guard cannot rate
+  a second it never received; its MISSING column is the dropout itself.
+- **Exploratory end-to-end runs (2026-10-28; not the formal experiment).**
+  Guard v1 with every default, 3600 s, `maxpressure` and Module 3's
+  `maxpressure_hyst_cap`, seed 1 with each single-kind scenario and `mixed`,
+  and clean runs on seeds 1 and 2 (16 runs, Linux container, same code as
+  CI). Clean runs: FAULTY on 0.00 % of approach-seconds on both seeds and
+  both controllers, SUSPECT or FAULTY 0.00-0.73 % (weak E2/E4 evidence on
+  gridlocked approaches). Detection delay: freeze 25-57 s, displaced
+  41-75 s, undercount 32-38 s under `maxpressure` and 213-296 s under
+  `maxpressure_hyst_cap`; recovery 31-109 s after the fault ends. The spec's
+  blackout on entry road N2_J2 was never detected: an all-zero entry camera
+  looks like an empty road (D24 limit). Dropout seconds are MISSING by
+  construction. In fault runs, 0.67-1.55 % of clean approach-seconds were
+  FAULTY, mostly approaches downstream of a faulty camera (E3 cannot say
+  which of two cameras is wrong, D25) and recovery tails. One worked
+  example (`maxpressure_hyst_cap`, `mixed`, J1_J2 frozen 900-1500 s):
+  SUSPECT at 915 s, FAULTY at 929 s with the virtual queue (4.9 PCU)
+  replacing the frozen 18.5 PCU and the margin growing to 29.5 PCU by
+  1499 s, TRUSTED again at 1531 s. The H2 targets (scope.md) need 10 seeds
+  and remain the formal Guard evaluation.

@@ -100,9 +100,19 @@ A fault run also writes `faults.jsonl`: the active fault kind (or null) per
 approach per second, the ground truth for scoring the Guard. Without
 `--faults` nothing changes.
 
-The Guard's evidence checks (docs/decisions.md D24, D25) are not in the run
-logs yet; a Python copy replays them over a run, per check and approach,
-against its `faults.jsonl`:
+`--guard v1` rates every camera TRUSTED / SUSPECT / FAULTY and replaces a
+FAULTY camera's queue with a virtual estimate (docs/decisions.md D26); the
+default `--guard passthrough` trusts every camera. Score the Guard of a fault
+run against its `faults.jsonl` (detection, delay, false alarms, recovery,
+confusion matrix; D27):
+
+```
+uv run python -m flowguard_sim.run --controller maxpressure --seconds 3600 --seed 1 --faults mixed --guard v1
+uv run python -m flowguard_sim.guard_eval results/<run_id>
+```
+
+The evidence scores themselves (D24, D25) are not in the run logs; a Python
+copy replays them over a run, per check and approach:
 
 ```
 uv run python -m flowguard_sim.evidence_replay results/<run_id>
