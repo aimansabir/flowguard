@@ -1,0 +1,11 @@
+{
+  "_note": "Every kind inside the first 300 s, for short runs and tests.",
+  "seed": 7,
+  "faults": [
+    {"approach": "J1_J2", "kind": "freeze",     "start_s": 60, "end_s": 180},
+    {"approach": "W_J1",  "kind": "undercount", "start_s": 30, "end_s": 270, "keep": 0.4},
+    {"approach": "N2_J2", "kind": "blackout",   "start_s": 60, "end_s": 120},
+    {"approach": "E_J3",  "kind": "dropout",    "start_s": 0,  "end_s": 300, "p": 0.2},
+    {"approach": "J2_J3", "kind": "displaced",  "start_s": 60, "end_s": 240, "shift_m": 40}
+  ]
+}

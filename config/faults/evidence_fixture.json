@@ -1,0 +1,11 @@
+{
+  "_note": "Every kind within 240 s, for tests/fixtures/evidence_replay.json (python -m flowguard_sim.evidence_replay --fixture).",
+  "seed": 5,
+  "faults": [
+    {"approach": "J1_J2", "kind": "freeze",     "start_s": 40,  "end_s": 160},
+    {"approach": "J2_J1", "kind": "undercount", "start_s": 30,  "end_s": 240, "keep": 0.4},
+    {"approach": "J3_J2", "kind": "blackout",   "start_s": 100, "end_s": 200},
+    {"approach": "W_J1",  "kind": "dropout",    "start_s": 60,  "end_s": 120, "p": 0.3},
+    {"approach": "E_J3",  "kind": "displaced",  "start_s": 50,  "end_s": 240, "shift_m": 40}
+  ]
+}

@@ -6,14 +6,21 @@ Two views per approach every second:
 - truth: the whole approach edge. Logged as ground truth and used for metrics,
   never shown to the core.
 
+Approaches given a shift also get a third view, `shifted_view`: a camera
+zone of the same length moved `shift_m` back from the stop line, what a
+displaced camera sees. The fault injector swaps it in during a displaced
+fault (docs/specs/guard.md, G0).
+
 Counts are raw per vehicle class; PCU weighting is the core's job.
 Arrivals = vehicles that entered the view this second (including vehicles
 inserted inside it). Departures = vehicles that left the approach edge this
-second, split by the movement their route takes next.
+second, split by the movement their route takes next; the same stop-line
+departures in every view.
 """
 # pyright: basic
 # traci ships without type information.
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 import traci
@@ -39,20 +46,28 @@ class _Tally:
 
 
 class SimObserver:
-    def __init__(self, corridor: Corridor, camera_zone_m: float | None):
-        """camera_zone_m=None: the camera sees the whole edge (same as truth)."""
+    def __init__(self, corridor: Corridor, camera_zone_m: float | None,
+                 shifted: Mapping[str, float] | None = None):
+        """camera_zone_m=None: the camera sees the whole edge (same as truth).
+        shifted: approach -> metres its camera zone is moved back, for `shifted_view`."""
         self.approach_ids = [a.id for j in corridor.junctions for a in approaches_of(corridor, j.id)]
         self.junction_of = {a.id: a.junction for a in corridor.approaches}
         self.length = {a.id: a.length_m for a in corridor.approaches}
         self.zone = {a.id: min(camera_zone_m, a.length_m) if camera_zone_m else a.length_m
                      for a in corridor.approaches}
+        self.shift = dict(shifted or {})
+        for a, s in self.shift.items():
+            if a not in self.length or not 0 < s <= self.length[a] - self.zone[a]:
+                raise ValueError(f"cannot shift the camera zone of {a!r} by {s} m")
+        self.shifted_view: dict[str, Measurement] = {}  # filled by observe()
         # approach -> {edge the vehicle turns onto: movement}
         self.movement_of = {
             a.id: {edge: mv for mv, edge in a.movements.model_dump().items() if edge}
             for a in corridor.approaches
         }
         self.routes: dict[str, list[str]] = {}
-        self.prev: dict[str, tuple[str, bool]] = {}  # vehicle -> (approach, in camera zone) last second
+        # vehicle -> (approach, in camera zone, in shifted zone) last second
+        self.prev: dict[str, tuple[str, bool, bool]] = {}
 
     def observe(self, t: float) -> tuple[list[Measurement], list[Measurement]]:
         """(camera view, truth), one Measurement per approach each."""
@@ -65,9 +80,10 @@ class SimObserver:
 
         cam = {a: _Tally() for a in self.approach_ids}
         truth = {a: _Tally() for a in self.approach_ids}
+        shifted = {a: _Tally() for a in self.shift}
         departures = {a: {m: _zeros() for m in ("left", "straight", "right")} for a in self.approach_ids}
 
-        now: dict[str, tuple[str, bool]] = {}
+        now: dict[str, tuple[str, bool, bool]] = {}
         for vid, v in traci.vehicle.getAllSubscriptionResults().items():
             road, vtype = v[tc.VAR_ROAD_ID], v[tc.VAR_TYPE]
             was = self.prev.get(vid)
@@ -80,11 +96,16 @@ class SimObserver:
             if road not in cam:
                 continue
             stopped = v[tc.VAR_SPEED] < HALT_SPEED
-            in_zone = v[tc.VAR_LANEPOSITION] >= self.length[road] - self.zone[road]
-            now[vid] = (road, in_zone)
+            pos = v[tc.VAR_LANEPOSITION]
+            in_zone = pos >= self.length[road] - self.zone[road]
+            front = self.length[road] - self.shift.get(road, 0.0)  # shifted zone ends here
+            in_shifted = road in shifted and front - self.zone[road] <= pos < front
+            now[vid] = (road, in_zone, in_shifted)
 
             views = [(truth[road], True, was is not None and was[0] == road),
                      (cam[road], in_zone, was is not None and was[0] == road and was[1])]
+            if road in shifted:
+                views.append((shifted[road], in_shifted, was is not None and was[0] == road and was[2]))
             for tally, inside, was_inside in views:
                 if not inside:
                     continue
@@ -103,5 +124,6 @@ class SimObserver:
                 "departures": departures[a],
             })
 
+        self.shifted_view = {a: build(a, shifted[a], self.zone[a]) for a in self.shift}
         return ([build(a, cam[a], self.zone[a]) for a in self.approach_ids],
                 [build(a, truth[a], self.length[a]) for a in self.approach_ids])

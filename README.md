@@ -84,6 +84,40 @@ Demand per seed is generated once into `data/demand/` and reused, so every
 controller sees the same vehicles. Rebuild the network after editing
 `data/net/*.nod.xml` / `*.edg.xml`: `uv run python -m flowguard_sim.build_net`.
 
+## Camera faults
+
+`--faults <name>` corrupts what the core receives using the scenario
+`config/faults/<name>.json` (freeze, blackout, undercount, dropout,
+displaced; format in docs/specs/guard.md G0, behaviour in docs/decisions.md D23):
+
+```
+uv run python -m flowguard_sim.run --controller maxpressure --seconds 300 --seed 1 --faults smoke
+uv run python -m flowguard_sim.run --controller maxpressure --seconds 3600 --seed 1 --faults mixed
+```
+
+`smoke` has every kind inside the first 300 s; `mixed` is the spec example.
+A fault run also writes `faults.jsonl`: the active fault kind (or null) per
+approach per second, the ground truth for scoring the Guard. Without
+`--faults` nothing changes.
+
+`--guard v1` rates every camera TRUSTED / SUSPECT / FAULTY and replaces a
+FAULTY camera's queue with a virtual estimate (docs/decisions.md D26); the
+default `--guard passthrough` trusts every camera. Score the Guard of a fault
+run against its `faults.jsonl` (detection, delay, false alarms, recovery,
+confusion matrix; D27):
+
+```
+uv run python -m flowguard_sim.run --controller maxpressure --seconds 3600 --seed 1 --faults mixed --guard v1
+uv run python -m flowguard_sim.guard_eval results/<run_id>
+```
+
+The evidence scores themselves (D24, D25) are not in the run logs; a Python
+copy replays them over a run, per check and approach:
+
+```
+uv run python -m flowguard_sim.evidence_replay results/<run_id>
+```
+
 ## Checks
 
 ```

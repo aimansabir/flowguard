@@ -1,0 +1,7 @@
+{
+  "_note": "Camera feed on J1_J2 freezes for 10 minutes (docs/specs/guard.md G0).",
+  "seed": 7,
+  "faults": [
+    {"approach": "J1_J2", "kind": "freeze", "start_s": 900, "end_s": 1500}
+  ]
+}

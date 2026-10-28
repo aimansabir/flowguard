@@ -1,0 +1,7 @@
+{
+  "_note": "Camera J2_J3 knocked 40 m out of alignment for the second half hour (docs/specs/guard.md G0).",
+  "seed": 7,
+  "faults": [
+    {"approach": "J2_J3", "kind": "displaced", "start_s": 1800, "end_s": 3600, "shift_m": 40}
+  ]
+}

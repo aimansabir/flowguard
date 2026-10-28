@@ -85,7 +85,22 @@ downstream approach for max-pressure, neighbouring junctions.
 ## CoreConfig
 
 `pcu` (weights per class), `timing` (`min_green_s`, `max_red_s`, `yellow_s`,
-`all_red_s`), `controller`, `guard` (`{"kind": "passthrough"}`, default).
+`all_red_s`), `controller`, `guard`: `{"kind": "passthrough"}` (default: every
+camera trusted as it is) or `{"kind": "v1", ...}` (Guard v1, docs/decisions.md
+D26). v1's blocks, each optional with every field defaulted:
+
+| block | fields | meaning |
+|---|---|---|
+| `evidence` | `quality`, `frozen`, `conservation`, `link`, `response`, `silence` | parameters of checks E1, E2, E5, E3, E4 (D24, D25) and E6 (`p_start`, `p_full`, D28) |
+| `combine` | `weights` {`quality`, `frozen`, `conservation`, `cross_junction`, `stalled_green`, `red_departures`, `silence`} | 0-1 per check in the noisy-OR score, default 1 |
+| `trust` | `suspect_score`, `suspect_s`, `faulty_score`, `faulty_s`, `recover_s` | G2 thresholds (score 0-1) and durations (s) |
+| `virtual_sensor` | `arrival_window_s`, `margin_growth_pcu_per_s`, `extend_queue_beyond_zone` | G3 trusted-rate window (s), margin growth (PCU/s), report the virtual queue past a full zone while trusted |
+
+Under v1 an approach without a measurement this second still gets a state (its virtual estimate,
+`override_flag` true, measured fields 0, trust state held; D30). Under v1, `queue_estimate` is the
+measured queue when TRUSTED or SUSPECT and
+the virtual queue when FAULTY; `margin` is 0 when TRUSTED, |measured -
+virtual| + the virtual margin when SUSPECT, the virtual margin when FAULTY.
 
 Controllers (all optional fields may be left out or null):
 

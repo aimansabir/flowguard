@@ -1,0 +1,7 @@
+{
+  "_note": "Detector on W_J1 keeps only 40 % of vehicles for 30 minutes (docs/specs/guard.md G0).",
+  "seed": 7,
+  "faults": [
+    {"approach": "W_J1", "kind": "undercount", "start_s": 600, "end_s": 2400, "keep": 0.4}
+  ]
+}

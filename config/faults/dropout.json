@@ -1,0 +1,7 @@
+{
+  "_note": "Link to camera E_J3 loses 20 % of seconds for the whole hour (docs/specs/guard.md G0).",
+  "seed": 7,
+  "faults": [
+    {"approach": "E_J3", "kind": "dropout", "start_s": 0, "end_s": 3600, "p": 0.2}
+  ]
+}

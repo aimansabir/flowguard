@@ -1,6 +1,14 @@
 //! The Guard decides how far each approach can be trusted and, when it can
 //! not, what queue the controller should use instead. See docs/specs/guard.md.
 
+pub mod evidence;
+pub mod silence;
+pub mod trust;
+pub mod v1;
+pub mod virtual_sensor;
+
+pub use v1::GuardV1;
+
 use crate::contracts::{ApproachState, Command, Measurement};
 use crate::corridor::CorridorIndex;
 

@@ -1,0 +1,7 @@
+{
+  "_note": "Side-road camera N2_J2 goes black for 2 minutes (docs/specs/guard.md G0).",
+  "seed": 7,
+  "faults": [
+    {"approach": "N2_J2", "kind": "blackout", "start_s": 1200, "end_s": 1320}
+  ]
+}

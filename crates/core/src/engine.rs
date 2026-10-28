@@ -9,7 +9,7 @@ use crate::contracts::{
 use crate::control::{make_controller, Controller, DecisionInput};
 use crate::corridor::CorridorIndex;
 use crate::error::{Error, Result};
-use crate::guard::{Guard, GuardInput, PassThrough};
+use crate::guard::{Guard, GuardInput, GuardV1, PassThrough};
 use crate::safety::SafetyEnvelope;
 use crate::state;
 
@@ -28,8 +28,11 @@ impl Core {
         config.pcu.validate()?;
         config.timing.validate()?;
         let controller = make_controller(&config.controller, &ix, &config.timing)?;
-        let guard: Box<dyn Guard> = match config.guard {
+        let guard: Box<dyn Guard> = match &config.guard {
             GuardConfig::Passthrough => Box::new(PassThrough),
+            GuardConfig::V1 { evidence, combine, trust, virtual_sensor } => {
+                Box::new(GuardV1::new(&ix, config.pcu, evidence, combine, trust, virtual_sensor)?)
+            }
         };
         let junctions: Vec<(String, usize)> =
             ix.corridor.junctions.iter().map(|j| (j.id.clone(), j.phases.len())).collect();
@@ -212,5 +215,54 @@ mod tests {
         assert_eq!(core.controller_name(), "fixed");
         assert_eq!(core.guard_name(), "passthrough");
         assert!(Core::from_json(&corridor, "{}").is_err());
+    }
+
+    /// Every approach every second, `time` advancing; a_n reports the same
+    /// counts each second (a frozen feed: a queue of 4 and two buses leaving).
+    fn frozen_a_n(t: i32) -> Vec<Measurement> {
+        [("a_w", "A", 1), ("a_n", "A", 4), ("b_w", "B", 0), ("b_n", "B", 0)]
+            .into_iter()
+            .map(|(a, j, q)| Measurement { time: f64::from(t), ..measurement(a, j, q) })
+            .collect()
+    }
+
+    #[test]
+    fn guard_v1_override_reaches_the_controller() {
+        let mut cfg = config(ControllerConfig::MaxPressure { hysteresis: None, capacity: None });
+        cfg.guard = serde_json::from_str(r#"{"kind":"v1"}"#).unwrap();
+        let mut core = Core::new(two_junctions(), cfg).unwrap();
+        assert_eq!(core.guard_name(), "v1");
+        let mut seen = Vec::new();
+        for t in 0..300 {
+            let out = core.step(f64::from(t), frozen_a_n(t)).unwrap();
+            let a_n = out.states.iter().find(|s| s.approach_id == "a_n").unwrap();
+            if seen.last() != Some(&a_n.trust_state) {
+                seen.push(a_n.trust_state);
+            }
+            if a_n.trust_state == TrustState::Faulty {
+                assert!(a_n.override_flag);
+                assert_eq!(a_n.measured_queue_pcu, 4.0);
+            }
+        }
+        assert_eq!(seen, vec![TrustState::Trusted, TrustState::Suspect, TrustState::Faulty]);
+    }
+
+    #[test]
+    fn passthrough_output_is_unchanged_by_the_v1_code() {
+        let mut core = Core::new(two_junctions(), config(ControllerConfig::MaxPressure { hysteresis: None, capacity: None })).unwrap();
+        for t in 0..300 {
+            let out = core.step(f64::from(t), frozen_a_n(t)).unwrap();
+            for s in &out.states {
+                assert_eq!((s.trust_state, s.margin, s.override_flag), (TrustState::Trusted, 0.0, false));
+                assert_eq!(s.queue_estimate, s.measured_queue_pcu);
+            }
+        }
+    }
+
+    #[test]
+    fn rejects_bad_guard_config() {
+        let mut cfg = config(ControllerConfig::MaxPressure { hysteresis: None, capacity: None });
+        cfg.guard = serde_json::from_str(r#"{"kind":"v1","trust":{"suspect_score":0.95}}"#).unwrap();
+        assert!(matches!(Core::new(two_junctions(), cfg), Err(Error::Config(_))));
     }
 }
