@@ -464,6 +464,23 @@ pub struct EvidenceConfig {
     pub conservation: ConservationEvidence,
     pub link: LinkEvidence,
     pub response: ResponseEvidence,
+    pub silence: SilenceEvidence,
+}
+
+/// E6: a camera reporting nothing at all for longer than its own trusted
+/// arrival rate makes plausible (D28). Probability of the silence
+/// p = exp(-rate x seconds); evidence from `p_start`, full at `p_full`.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(default, deny_unknown_fields)]
+pub struct SilenceEvidence {
+    pub p_start: f64,
+    pub p_full: f64,
+}
+
+impl Default for SilenceEvidence {
+    fn default() -> Self {
+        SilenceEvidence { p_start: 1e-3, p_full: 1e-5 }
+    }
 }
 
 /// E1: the producer's quality report. Any bad flag scores `weight`.
@@ -632,6 +649,7 @@ pub struct CheckWeights {
     pub cross_junction: f64,
     pub stalled_green: f64,
     pub red_departures: f64,
+    pub silence: f64,
 }
 
 impl Default for CheckWeights {
@@ -643,6 +661,7 @@ impl Default for CheckWeights {
             cross_junction: 1.0,
             stalled_green: 1.0,
             red_departures: 1.0,
+            silence: 1.0,
         }
     }
 }

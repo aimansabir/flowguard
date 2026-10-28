@@ -182,6 +182,9 @@ pub struct Evidence {
     pub stalled_green: Option<f64>,
     /// E4, departures under red. None: no measurement or command.
     pub red_departures: Option<f64>,
+    /// E6, improbable silence. Needs the trust history, so Guard v1 fills it
+    /// in (guard/v1.rs); always None from this tracker.
+    pub silence: Option<f64>,
 }
 
 /// E1: the producer's own quality report. Any bad flag gives `quality_weight`;
@@ -469,6 +472,7 @@ impl EvidenceTracker {
             cross_junction: links[a].score,
             stalled_green: response.map(|r| r.0),
             red_departures: response.map(|r| r.1),
+            silence: None,
         }
     }
 }

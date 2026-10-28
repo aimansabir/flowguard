@@ -343,6 +343,20 @@ class PerMovement(BaseModel):
     right: float
 
 
+class SilenceEvidence(BaseModel):
+    """
+    E6: a camera reporting nothing at all for longer than its own trusted
+    arrival rate makes plausible (D28). Probability of the silence
+    p = exp(-rate x seconds); evidence from `p_start`, full at `p_full`.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    p_start: float | None = 0.001
+    p_full: float | None = 1e-05
+
+
 class CheckWeights(BaseModel):
     """
     0-1 multiplier per check; 0 leaves a check out (ablations).
@@ -357,6 +371,7 @@ class CheckWeights(BaseModel):
     cross_junction: float | None = 1.0
     stalled_green: float | None = 1.0
     red_departures: float | None = 1.0
+    silence: float | None = 1.0
 
 
 class TrustConfig(BaseModel):
@@ -619,6 +634,7 @@ class CombineConfig(BaseModel):
         "cross_junction": 1.0,
         "stalled_green": 1.0,
         "red_departures": 1.0,
+        "silence": 1.0,
     }
 
 
@@ -755,6 +771,10 @@ class EvidenceConfig(BaseModel):
         "red_floor_s": 60.0,
         "red_tolerance_per_min": {"left": 2.0, "straight": 2.0, "right": 2.0},
     }
+    silence: Annotated[SilenceEvidence | None, Field(validate_default=True)] = {
+        "p_start": 0.001,
+        "p_full": 1e-05,
+    }
 
 
 class GuardV1Config(BaseModel):
@@ -798,6 +818,7 @@ class GuardV1Config(BaseModel):
             "red_floor_s": 60.0,
             "red_tolerance_per_min": {"left": 2.0, "straight": 2.0, "right": 2.0},
         },
+        "silence": {"p_start": 0.001, "p_full": 1e-05},
     }
     combine: Annotated[CombineConfig | None, Field(validate_default=True)] = {
         "weights": {
@@ -807,6 +828,7 @@ class GuardV1Config(BaseModel):
             "cross_junction": 1.0,
             "stalled_green": 1.0,
             "red_departures": 1.0,
+            "silence": 1.0,
         }
     }
     trust: Annotated[TrustConfig | None, Field(validate_default=True)] = {

@@ -920,6 +920,10 @@
                     "straight": 2.0,
                     "right": 2.0
                   }
+                },
+                "silence": {
+                  "p_start": 0.001,
+                  "p_full": 0.00001
                 }
               }
             },
@@ -932,7 +936,8 @@
                   "conservation": 1.0,
                   "cross_junction": 1.0,
                   "stalled_green": 1.0,
-                  "red_departures": 1.0
+                  "red_departures": 1.0,
+                  "silence": 1.0
                 }
               }
             },
@@ -1020,6 +1025,13 @@
               "straight": 2.0,
               "right": 2.0
             }
+          }
+        },
+        "silence": {
+          "$ref": "#/$defs/SilenceEvidence",
+          "default": {
+            "p_start": 0.001,
+            "p_full": 0.00001
           }
         }
       },
@@ -1250,6 +1262,23 @@
         "right"
       ]
     },
+    "SilenceEvidence": {
+      "description": "E6: a camera reporting nothing at all for longer than its own trusted\narrival rate makes plausible (D28). Probability of the silence\np = exp(-rate x seconds); evidence from `p_start`, full at `p_full`.",
+      "type": "object",
+      "properties": {
+        "p_start": {
+          "type": "number",
+          "format": "double",
+          "default": 0.001
+        },
+        "p_full": {
+          "type": "number",
+          "format": "double",
+          "default": 0.00001
+        }
+      },
+      "additionalProperties": false
+    },
     "CombineConfig": {
       "description": "How the evidence becomes one score per approach (D26): noisy-OR,\n`1 - product(1 - weight x score)` over the checks that could judge.",
       "type": "object",
@@ -1262,7 +1291,8 @@
             "conservation": 1.0,
             "cross_junction": 1.0,
             "stalled_green": 1.0,
-            "red_departures": 1.0
+            "red_departures": 1.0,
+            "silence": 1.0
           }
         }
       },
@@ -1298,6 +1328,11 @@
           "default": 1.0
         },
         "red_departures": {
+          "type": "number",
+          "format": "double",
+          "default": 1.0
+        },
+        "silence": {
           "type": "number",
           "format": "double",
           "default": 1.0
