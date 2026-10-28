@@ -187,7 +187,7 @@ mod tests {
     /// A platoon of 10 PCU released upstream every 60 s (signals send traffic
     /// in platoons), arriving `delay` s later, scaled by `seen`.
     fn platoon(t: usize) -> f64 {
-        if t % 60 == 0 { 10.0 } else { 0.0 }
+        if t.is_multiple_of(60) { 10.0 } else { 0.0 }
     }
 
     fn flow(n: usize, delay: usize, seen: f64) -> Vec<(f64, f64, f64)> {

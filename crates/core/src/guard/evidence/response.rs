@@ -90,14 +90,14 @@ mod tests {
 
     #[test]
     fn healthy_green_discharge() {
-        let s = green_run(60, |t| input(green(t as f64), 8, if t % 2 == 0 { [0, 1, 0] } else { [0; 3] }));
+        let s = green_run(60, |t| input(green(t as f64), 8, if t.is_multiple_of(2) { [0, 1, 0] } else { [0; 3] }));
         assert_eq!(s, (0.0, 0.0));
     }
 
     #[test]
     fn arrivals_during_healthy_green_do_not_matter() {
         // the queue grows (more arrive than leave) but departures keep coming
-        let s = green_run(60, |t| input(green(t as f64), 8 + t as u32 / 3, if t % 3 == 0 { [1, 0, 0] } else { [0; 3] }));
+        let s = green_run(60, |t| input(green(t as f64), 8 + t as u32 / 3, if t.is_multiple_of(3) { [1, 0, 0] } else { [0; 3] }));
         assert_eq!(s.0, 0.0);
     }
 
@@ -111,7 +111,7 @@ mod tests {
     #[test]
     fn startup_delay_is_not_a_stall() {
         // no departures in the first startup_s seconds, then normal discharge
-        let s = green_run(30, |t| input(green(t as f64), 8, if t > 4 && t % 2 == 0 { [0, 1, 0] } else { [0; 3] }));
+        let s = green_run(30, |t| input(green(t as f64), 8, if t > 4 && t.is_multiple_of(2) { [0, 1, 0] } else { [0; 3] }));
         assert_eq!(s.0, 0.0);
         // a whole short green spent in start-up builds nothing either
         let s = green_run(4, |t| input(green(t as f64), 8, [0; 3]));
@@ -152,7 +152,7 @@ mod tests {
     #[test]
     fn departures_under_red_are_evidence() {
         // a vehicle every 10 s over red: 6 per minute, three times the tolerance
-        let s = green_run(120, |t| input(Signal::Red, 8, if t % 10 == 0 { [0, 1, 0] } else { [0; 3] }));
+        let s = green_run(120, |t| input(Signal::Red, 8, if t.is_multiple_of(10) { [0, 1, 0] } else { [0; 3] }));
         assert_eq!(s.1, 1.0);
     }
 
@@ -180,7 +180,7 @@ mod tests {
 
     #[test]
     fn yellow_and_all_red_are_neither_green_nor_red() {
-        let s = green_run(120, |t| input(Signal::Clearing, 8, if t % 2 == 0 { [0, 1, 0] } else { [0; 3] }));
+        let s = green_run(120, |t| input(Signal::Clearing, 8, if t.is_multiple_of(2) { [0, 1, 0] } else { [0; 3] }));
         assert_eq!(s, (0.0, 0.0));
         let s = green_run(120, |_| input(Signal::Clearing, 8, [0; 3]));
         assert_eq!(s, (0.0, 0.0));
