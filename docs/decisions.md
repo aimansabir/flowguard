@@ -430,8 +430,8 @@ now takes the core's PCU weights.
   movement of an approach with its phase (`signals.py`), so nothing may go
   on red here, and the map cannot express a free turn. Real video will need
   the tolerances raised, especially for the free nearside turn: left in
-  Karachi's left-hand traffic (the SUMO network drives on the right, so its
-  "left" is the far-side turn).
+  Karachi's left-hand traffic (the SUMO network drove on the right when this
+  was calibrated; it drives on the left since D29).
 - **Parameters** (`EvidenceParams`, all provisional research values):
   `free_flow_mps` 13.89 (50 km/h urban limit, equal to SUMO's speed on the
   four main-road links E3 covers); `fast_factor` 1.2 (SUMO's fastest car,
@@ -667,3 +667,80 @@ causes, neither a defect in E1-E5:
   an approach without a measurement (the virtual estimate, flagged as not
   measured), which changes what `StepOutput.states` and the controllers'
   input mean: a decision for the team (Module 3 reads it), not made here.
+
+## D29. Karachi drives on the left: network and signal permissions (2026-10-28)
+The placeholder corridor was built by netconvert with its default,
+right-hand traffic; Karachi drives on the left. `config/sim.json`
+`driving_side: "left"` now makes `build_net` pass `--lefthand`.
+
+- **Audit of the right-hand model** (before the change). Every junction
+  has two phases (main road, side street), each lighting all movements of
+  both opposite approaches. Using SUMO's own conflict matrix
+  (`<request foes response>` in the network): no two protected (`G`)
+  movements of a phase cross or merge, every conflict inside a phase is
+  between a protected movement and a permissive (`g`) one that gives way,
+  so in its own right-hand world the model was consistent and SUMO enforced
+  the yielding. Of 41 teleports in 16 calibration runs, 40 were rear-end or
+  lane-change collisions on the links between junctions (sublane car
+  following, scope.md) and one was two motorcycles going straight through
+  J1 on the same internal lane; none came from a turning conflict, and no
+  run had a jam or deadlock teleport. The long stalls seen earlier (D25:
+  J2_J3 discharging nothing for about 300 s of green) are a permissive
+  turn under heavy opposing flow: the left-turner waits inside the
+  junction for a gap and blocks the shared straight-and-left lane behind
+  it. Realistic behaviour of a permissive turn, a capacity effect, not a
+  collision.
+- **The real defect.** `signals.py` decided which movements yield by
+  direction code: left turns (`l`, `L`, `t`) permissive, everything else
+  protected. That is only right for right-hand traffic. On the left-hand
+  network the turn across oncoming traffic is the right turn, and the old
+  rule would have given it protected green against the opposing straight:
+  18 conflicting protected pairs over the three junctions (tested). The
+  envelope (Rust) only guarantees one phase at a time and the clearance
+  times; it does not know movements, so nothing caught this.
+- **Change.** `conflicts.py` reads, for each signalised junction, which
+  links (lane-to-lane movements) are foes and which gives way to which,
+  from the network itself (sumolib, keyed by signal link index). A link of
+  the lit phase is protected unless it must give way to another link green
+  at the same time, then permissive. On the right-hand network this
+  reproduces the old states exactly (all three junctions, both phases); on
+  the left-hand one the right turns are permissive, giving way to the
+  opposing straight and left, and the left turns, the nearside turn, are
+  protected. `SignalApplier` checks every phase at start-up and every state
+  it sends: no approaches of two phases together (D4) and no two protected
+  movements in conflict. Yellow and all-red are unchanged (envelope).
+- **Two phases kept.** The audit found the two-phase permissive design
+  movement-safe once permissions come from the conflict matrix. Protected
+  turn phases would need phases of movements rather than approaches: a
+  corridor contract change and controller changes (Module 3), justified by
+  capacity at most, not by safety. Approach-level split phasing (one
+  approach per phase) is already expressible in `corridor.json` if the
+  team wants it; the controllers and the envelope handle any number of
+  phases, and the start-up check validates whatever phases are given.
+- **Compatibility.** Approaches, lengths, lanes, turn targets, entries,
+  exits and phases in `corridor.json` are identical (movement names are
+  geometric); only the signal link order changed, which only `signals.py`
+  reads. No Rust, contract or controller change. The evidence fixture
+  (D25) and the E1-E5 calibration were made on the right-hand network.
+- **Comparison, exploratory** (same demand seeds and controllers, 3600 s,
+  Guard passthrough, Linux container; right-hand -> left-hand). Normal
+  demand, `fixed`, `fixed_webster`, `maxpressure`, `maxpressure_hyst_cap`
+  on seeds 1 and 2 (16 runs): no junction collisions and no jam or deadlock
+  teleports on either model; link collisions similar (10 -> 11 teleports,
+  20 -> 22 colliding vehicles, the sublane rear-ends); fixed-time signal
+  behaviour identical (309 and 480 greens); average delay within seed
+  noise except `fixed` seed 1, 118 -> 78 s, whose right-hand run had the
+  permissive-turn stall at J3 (max queue 108 -> 58.5 PCU); the max-pressure
+  variants 3-13 % lower on both seeds. 1.5x demand, seed 1:
+  `maxpressure_hyst_cap` 356 -> 303 s delay, 3195 -> 3362 veh/h, with 2
+  junction collisions and 4 jam teleports on the right-hand network and
+  none on the left-hand one; `fixed` 281 -> 274 s, no junction collisions
+  on either. Two seeds and one high-demand seed show the left-hand model is
+  not worse; they do not show it is better.
+- **Limits.** Two phases with permissive crossing turns lose capacity when
+  opposing flow is heavy (the stall above), which real Karachi junctions
+  often answer with split phasing or a protected turn; this model does not
+  test those. Turning lanes come from netconvert defaults for the
+  hand-written network, not surveyed lane markings. The E1-E5 thresholds
+  (D24, D25) and the evidence fixture were calibrated on the right-hand
+  network; recalibrate when the corridor is final.

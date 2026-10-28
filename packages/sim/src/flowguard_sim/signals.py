@@ -7,9 +7,9 @@ SUMO's junction model prescribes: the turn across oncoming traffic (the
 right turn in left-hand traffic, the left turn in right-hand traffic). Which
 movements conflict and which one yields comes from the network itself
 (conflicts.py), not from direction codes, so it holds for either driving
-side (decisions.md D28).
+side (decisions.md D29).
 
-Two checks guard what reaches SUMO (decisions.md D4, D28): no state may
+Two checks guard what reaches SUMO (decisions.md D4, D29): no state may
 light approaches of more than one phase, and no two protected greens may
 conflict. Every phase is checked when the applier starts.
 """

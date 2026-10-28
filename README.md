@@ -83,6 +83,9 @@ Each run writes `results/<run_id>/`: `truth.jsonl` (full-edge ground truth),
 Demand per seed is generated once into `data/demand/` and reused, so every
 controller sees the same vehicles. Rebuild the network after editing
 `data/net/*.nod.xml` / `*.edg.xml`: `uv run python -m flowguard_sim.build_net`.
+The network drives on the left, as in Karachi (`driving_side` in
+`config/sim.json`); which turning movements are protected or must give way
+comes from SUMO's conflict matrix (docs/decisions.md D29).
 
 ## Camera faults
 

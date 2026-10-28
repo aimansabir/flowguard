@@ -4,7 +4,7 @@ netconvert computes, for every pair of links (lane-to-lane connections)
 through a junction, whether they cross or merge (foes) and which one has
 right of way. That depends on the geometry and on the driving side, so it is
 the right source for which movements may share a green and which turning
-movement must give way (docs/decisions.md D28).
+movement must give way (docs/decisions.md D29).
 """
 # pyright: basic
 # sumolib ships without type information.

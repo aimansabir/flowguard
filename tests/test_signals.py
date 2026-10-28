@@ -1,4 +1,4 @@
-"""Signal states from movement conflicts (decisions.md D28): which movements
+"""Signal states from movement conflicts (decisions.md D29): which movements
 of a lit phase are protected or permissive, and the checks that keep
 conflicting movements from both getting protected green."""
 
@@ -15,7 +15,8 @@ from flowguard_sim.signals import check_phases, has_conflicting_greens, protecte
 # A four-arm junction in left-hand traffic. Main road e/w (phase 0), side
 # street n/s (phase 1). Links: 0 e straight, 1 e left, 2 e right,
 # 3 w straight, 4 w left, 5 w right, 6 n straight, 7 n right, 8 s straight.
-LINKS = [("e", "s"), ("e", "l"), ("e", "r"), ("w", "s"), ("w", "l"), ("w", "r"), ("n", "s"), ("n", "r"), ("s", "s")]
+LINKS = [("e", "s"), ("e", "l"), ("e", "r"), ("w", "s"), ("w", "l"), ("w", "r"),
+         ("n", "s"), ("n", "r"), ("s", "s")]
 JUNCTION = Junction.model_validate({
     "id": "J", "phases": [["e", "w"], ["n", "s"]],
     "links": [{"approach": a, "direction": d} for a, d in LINKS],
@@ -134,6 +135,7 @@ def test_direction_rule_would_conflict_in_left_hand_traffic() -> None:
     for junction in CORRIDOR.junctions:
         conflicts = read_conflicts(NET, [junction.id])[junction.id]
         c = cmd(0, "green", junction.id)
-        old = "".join("g" if (x := light(junction, link.approach, c)) == "G" and link.direction in ("l", "L", "t")
-                      else x for link in junction.links)
+        lit = [light(junction, link.approach, c) for link in junction.links]
+        old = "".join("g" if x == "G" and link.direction in ("l", "L", "t") else x
+                      for x, link in zip(lit, junction.links, strict=True))
         assert protected_conflicts(old, conflicts) != []

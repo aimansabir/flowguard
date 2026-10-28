@@ -8,7 +8,7 @@ junctions with their two phases and signal link order, every approach with
 its length, lanes and where each turn leads, and where traffic enters and
 leaves. For the real OSM corridor the phases have to be chosen by hand; this
 gives a starting point (decisions.md D6). The driving side comes from
-config/sim.json (`driving_side`, D28): Karachi drives on the left.
+config/sim.json (`driving_side`, D29): Karachi drives on the left.
 """
 # pyright: basic
 # sumolib ships without type information.

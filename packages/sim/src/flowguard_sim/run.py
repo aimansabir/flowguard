@@ -120,7 +120,8 @@ def run(controller: str, seconds: int, seed: int, results_dir: Path = ROOT / "re
         "--no-step-log", "true",
     ])
     observer = SimObserver(corridor, zone, shifted=injector.shifts())
-    signals = SignalApplier(corridor, read_conflicts(ROOT / sim_cfg["net_file"], [j.id for j in corridor.junctions]))
+    conflicts = read_conflicts(ROOT / sim_cfg["net_file"], [j.id for j in corridor.junctions])
+    signals = SignalApplier(corridor, conflicts)
     departed = teleports = collisions = 0
 
     with ExitStack() as stack:
