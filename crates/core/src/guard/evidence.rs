@@ -14,7 +14,9 @@ use std::collections::VecDeque;
 pub use link::{LinkBalance, LinkInput, LinkReading};
 pub use response::{Response, ResponseInput};
 
-use crate::contracts::{ClassCounts, Command, Measurement, Movement, MovementCounts, PcuWeights, Quality, Stage};
+use crate::contracts::{
+    ClassCounts, Command, EvidenceConfig, Measurement, Movement, MovementCounts, PcuWeights, Quality, Stage,
+};
 use crate::corridor::CorridorIndex;
 use crate::error::{Error, Result};
 use crate::guard::GuardInput;
@@ -57,7 +59,7 @@ pub struct EvidenceParams {
     /// E3: extra seconds the slowest trip may take (start-up, slow classes, turns).
     pub slack_s: f64,
     /// E3: metres of lane one PCU takes in the densest standing queue.
-    pub jam_spacing_m: f64,
+    pub min_spacing_m: f64,
     /// E3: the downstream zone counts as congested, and a link as full, from
     /// this share of what it can store.
     pub congested_fraction: f64,
@@ -86,37 +88,47 @@ pub struct EvidenceParams {
     pub red_tolerance_per_min: [f64; 3],
 }
 
+/// The contract's nested `EvidenceConfig` as the flat set the checks read.
+impl From<&EvidenceConfig> for EvidenceParams {
+    fn from(c: &EvidenceConfig) -> Self {
+        let (q, f, e5, l, r) = (&c.quality, &c.frozen, &c.conservation, &c.link, &c.response);
+        let red = &r.red_tolerance_per_min;
+        EvidenceParams {
+            brightness_edge: q.brightness_edge,
+            blur_max: q.blur_max,
+            confidence_min: q.confidence_min,
+            track_breaks_max: q.track_breaks_max,
+            displacement_max_px: q.displacement_max_px,
+            quality_weight: q.weight,
+            frozen_s: f.frozen_s,
+            supply_s: f.supply_s,
+            standing_weight: f.standing_weight,
+            window: e5.window,
+            block: e5.block,
+            tolerance: e5.tolerance,
+            free_flow_mps: l.free_flow_mps,
+            fast_factor: l.fast_factor,
+            slack_s: l.slack_s,
+            min_spacing_m: l.min_spacing_m,
+            congested_fraction: l.congested_fraction,
+            saturation_flow: l.saturation_flow,
+            link_window_s: l.window_s,
+            min_volume_pcu: l.min_volume_pcu,
+            link_tolerance: l.tolerance,
+            startup_s: r.startup_s,
+            stall_s: r.stall_s,
+            stall_weight: r.stall_weight,
+            red_window_s: r.red_window_s,
+            red_floor_s: r.red_floor_s,
+            red_tolerance_per_min: [red.left, red.straight, red.right],
+        }
+    }
+}
+
+/// The defaults are the contract's: `{"kind": "v1"}` and these agree.
 impl Default for EvidenceParams {
     fn default() -> Self {
-        EvidenceParams {
-            brightness_edge: 0.05,
-            blur_max: 0.7,
-            confidence_min: 0.3,
-            track_breaks_max: 30.0,
-            displacement_max_px: 20.0,
-            quality_weight: 0.5,
-            frozen_s: 20.0,
-            supply_s: 60.0,
-            standing_weight: 0.5,
-            window: 60,
-            block: 5,
-            tolerance: 1.0,
-            free_flow_mps: 13.89,
-            fast_factor: 1.2,
-            slack_s: 30.0,
-            jam_spacing_m: 3.5,
-            congested_fraction: 0.5,
-            saturation_flow: 0.5,
-            link_window_s: 120.0,
-            min_volume_pcu: 10.0,
-            link_tolerance: 0.2,
-            startup_s: 4.0,
-            stall_s: 15.0,
-            stall_weight: 0.5,
-            red_window_s: 120.0,
-            red_floor_s: 60.0,
-            red_tolerance_per_min: [2.0, 2.0, 2.0],
-        }
+        EvidenceParams::from(&EvidenceConfig::default())
     }
 }
 
@@ -135,7 +147,7 @@ impl EvidenceParams {
             && self.free_flow_mps > 0.0
             && self.fast_factor >= 1.0
             && self.slack_s >= 0.0
-            && self.jam_spacing_m > 0.0
+            && self.min_spacing_m > 0.0
             && self.congested_fraction > 0.0
             && self.congested_fraction <= 1.0
             && self.saturation_flow > 0.0
@@ -304,15 +316,21 @@ pub struct EvidenceTracker {
     tracks: Vec<Track>,
 }
 
+/// PCU the feeders of an approach sent toward it this interval; None if
+/// any feeder sent no measurement. Shared by E3 and the virtual sensor.
+pub fn sent_toward(measurements: &[Option<Measurement>], feeders: &[(usize, Movement)], pcu: &PcuWeights) -> Option<f64> {
+    let mut sent = 0.0;
+    for &(u, mv) in feeders {
+        sent += measurements[u].as_ref()?.departures.get(mv).pcu(pcu);
+    }
+    Some(sent)
+}
+
 /// E3 input for link `d`; None if it or any feeder sent no measurement.
 fn link_input(input: &GuardInput<'_>, d: usize, feeders: &[(usize, Movement)], pcu: &PcuWeights) -> Option<LinkInput> {
     let down = input.measurements[d].as_ref()?;
-    let mut sent = 0.0;
-    for &(u, mv) in feeders {
-        sent += input.measurements[u].as_ref()?.departures.get(mv).pcu(pcu);
-    }
     Some(LinkInput {
-        sent,
+        sent: sent_toward(input.measurements, feeders, pcu)?,
         arrived: down.arrivals.pcu(pcu),
         queue: down.queue_counts.pcu(pcu),
         zone_m: down.zone_length_m,
@@ -366,6 +384,11 @@ impl EvidenceTracker {
             links,
             tracks: vec![Track::default(); approaches.len()],
         })
+    }
+
+    /// Upstream approaches and movements feeding approach `a`.
+    pub fn feeders(&self, a: usize) -> &[(usize, Movement)] {
+        &self.feeders[a]
     }
 
     /// Evidence per approach, indexed like `input.measurements`.
@@ -833,7 +856,7 @@ mod tests {
         assert!(matches!(EvidenceTracker::new(&ix, PCU, bad), Err(Error::Config(_))));
         for bad in [
             EvidenceParams { tolerance: 0.0, ..Default::default() },
-            EvidenceParams { jam_spacing_m: 0.0, ..Default::default() },
+            EvidenceParams { min_spacing_m: 0.0, ..Default::default() },
             EvidenceParams { fast_factor: 0.9, ..Default::default() },
             EvidenceParams { red_tolerance_per_min: [2.0, 0.0, 2.0], ..Default::default() },
         ] {

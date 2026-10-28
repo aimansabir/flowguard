@@ -394,7 +394,7 @@ now takes the core's PCU weights.
   stretch = link length - zone length), at most what was sent within the
   slowest trip (`stretch / v + slack_s`, 46.2 s) plus an allowance for a
   queue held on the link, and never more than the link stores
-  (`stretch * lanes / jam_spacing_m`, 128.6 PCU). The allowance is the full
+  (`stretch * lanes / min_spacing_m`, 128.6 PCU). The allowance is the full
   storage while the downstream zone is congested and drains at saturation
   flow after. How far the balance had to be pushed back is the evidence:
   share = corrections / max(sent, `min_volume_pcu`) over `link_window_s`,
@@ -436,7 +436,7 @@ now takes the core's PCU weights.
   `free_flow_mps` 13.89 (50 km/h urban limit, equal to SUMO's speed on the
   four main-road links E3 covers); `fast_factor` 1.2 (SUMO's fastest car,
   16.7 m/s); `slack_s` 30 (start from a stop, rickshaws and qingqis at
-  11.1 m/s, crossing the junction, yielding left turns); `jam_spacing_m` 3.5
+  11.1 m/s, crossing the junction, yielding left turns); `min_spacing_m` 3.5
   (densest seen: clean seed-1 runs held 31 PCU in a 60 m two-lane zone,
   3.9 m per PCU-lane; set denser so storage is an upper bound; car-only
   queues are about 7 m); `congested_fraction` 0.5 (a queue reaching the back
@@ -484,3 +484,89 @@ now takes the core's PCU weights.
   mid-link sources and sinks are not modelled; the simulator has none. E4
   cannot tell gridlock or an incident from a camera that misses departures,
   hence the cap.
+
+## D26. Guard v1: trust state (G2), virtual sensor (G3), `GuardConfig` v1 (2026-10-28)
+`{"kind": "v1"}` in `CoreConfig.guard` runs `crates/core/src/guard/v1.rs`;
+`{"kind": "passthrough"}` stays the default and unchanged. Additive contract
+change: every block and field of v1 has a default, so `{"kind": "v1"}` is
+the Guard documented here. `run.py --guard v1` selects it.
+
+- **Config.** `evidence` (the D24/D25 parameters, one block per check; E3's
+  spacing renamed `min_spacing_m` so it cannot be mistaken for max-pressure's
+  `capacity.jam_spacing_m`, which means a typical queue, D22), `combine`
+  (`weights` per check, 0-1, default 1), `trust` and `virtual_sensor` below.
+  `EvidenceParams::default()` is derived from the contract defaults, one
+  source.
+- **Combination.** The spec gives no rule. Noisy-OR over the checks that
+  could judge this second: `score = 1 - product(1 - weight x check)`. A
+  check that cannot judge (null) is left out, not taken as clean; no check
+  at all gives no score. Chosen because it is the standard way to combine
+  independent signs, never inflates a single check, stays in 0-1 and lets
+  weak signs add up. Not tuned on any run. The weak checks keep their caps
+  (E1, E2 standing queue, E4 stall: 0.5 each), so all three together reach
+  0.875, below `faulty_score` 0.9: weak evidence alone can make an
+  approach SUSPECT, never FAULTY (unit-tested).
+- **Trust state machine** (spec G2), per approach, timers in seconds of
+  measurements: TRUSTED -> SUSPECT once score >= `suspect_score` (0.5) for
+  `suspect_s` (5) consecutive seconds; SUSPECT -> FAULTY once score >=
+  `faulty_score` (0.9) for `faulty_s` (10) consecutive seconds (counted from
+  when the strong evidence began, also while still TRUSTED; FAULTY is only
+  reached through SUSPECT); SUSPECT or FAULTY -> TRUSTED after `recover_s`
+  (30) clean seconds, a score at or above `suspect_score` resetting that
+  timer. A second without a measurement, or with no score, holds the state
+  and every timer. A clean second only counts toward recovery when E5 can
+  judge (the camera's own consistency; not E3, which depends on its
+  neighbours), so the seconds right after a gap hold the timer instead of
+  passing as clean. Defaults are provisional: chosen before any run, so that
+  a strong sign must last 10 s and a recovery 30 s; detection delay is then
+  the evidence's own build-up plus 10 s.
+- **Virtual sensor** (spec G3), every approach, every second, whether its
+  camera is trusted or not: `Q(t+1) = max(0, Q(t) + A(t) - D(t))` in PCU,
+  capped at what the approach can hold (length x lanes / `min_spacing_m`).
+  A internal approach: PCU its feeders (every upstream approach and
+  movement whose target it is, the E3 topology and the same
+  `sent_toward` function) sent toward it, arriving `length / free_flow_mps`
+  later (20.5 s on our main road). If a feeder sent nothing (missing) or is
+  FAULTY, that second's amount is unknown and arrives at the trusted
+  arrival rate instead. A entry approach: the trusted arrival rate. The
+  trusted arrival rate is the mean of the measured zone arrivals over the
+  last `arrival_window_s` (300) trusted seconds, however long ago; before
+  any trusted second it is 0 (nothing to go on: the estimate can only
+  drain). D: `saturation_flow` x lanes (0.5 PCU/s per lane, the spec's
+  placeholder) while the envelope's Command shows the approach green (not
+  yellow, all-red or red, and never the controller's request), never more
+  than there is. Anchor: on every second the approach is TRUSTED with a
+  score below `suspect_score`, Q is set to the measured queue, the arrivals
+  join the trusted rate and the margin resets; a zone at least
+  `congested_fraction` full is only a lower bound (Q = max(Q, measured)),
+  because the queue may continue upstream of what the camera sees, so Q can
+  exceed the camera's queue (spec: extend a camera queue beyond the zone).
+  A suspect or faulty camera never anchors; the first trusted second after
+  recovery re-anchors, dropping whatever error the estimate built up.
+- **Output.**
+
+  | trust | `queue_estimate` | `margin` | `override_flag` |
+  |---|---|---|---|
+  | TRUSTED | measured | 0 | false |
+  | SUSPECT | measured | \|measured - Q\| + virtual margin | false |
+  | FAULTY | Q | virtual margin | true |
+
+  `margin` is a +/- range in PCU around `queue_estimate` for a conservative
+  controller (control spec C4). Virtual margin =
+  `margin_growth_pcu_per_s` (0.05) x seconds since the last anchor: 0 at a
+  trusted reading, growing linearly while untrusted (spec: grows with time
+  since the last trusted reading), never negative. A SUSPECT camera is kept,
+  and its range covers both it and the virtual estimate. `override_flag`
+  means exactly what docs/contracts.md says: the estimate is not the
+  measured queue. `extend_queue_beyond_zone` (default false) would also
+  report Q for a TRUSTED approach whose full zone hides a longer queue, with
+  `override_flag` set; off by default because it changes what controllers
+  see in fault-free runs (H1, H3), to switch on as its own experiment.
+  Controllers are unchanged: they read `queue_estimate` as before (C4,
+  using `margin`, is Module 3's).
+- **Limits.** The point queue ignores travel inside the zone and start-up
+  lost time; vehicles that turn off before the stop line, driveways and
+  parking are not modelled. Entry estimates are only as good as the trusted
+  arrival rate (no time-of-day profile). A FAULTY feeder is replaced by the
+  downstream approach's own trusted rate, not by the feeder's virtual
+  discharge.

@@ -51,7 +51,7 @@ class Params:
     free_flow_mps: float = 13.89
     fast_factor: float = 1.2
     slack_s: float = 30.0
-    jam_spacing_m: float = 3.5
+    min_spacing_m: float = 3.5
     congested_fraction: float = 0.5
     saturation_flow: float = 0.5
     link_window_s: float = 120.0
@@ -206,7 +206,7 @@ class LinkBalance:
         if stretch <= 0.0:
             self.reset()
             return None, None
-        storage = stretch * self.lanes / p.jam_spacing_m
+        storage = stretch * self.lanes / p.min_spacing_m
         if self.last_t is None:
             self.balance = 0.0
             self.allowance = storage
@@ -219,7 +219,7 @@ class LinkBalance:
             self.sent.popleft()
         self.balance += x.sent - x.arrived
 
-        zone_storage = x.zone_m * self.lanes / p.jam_spacing_m
+        zone_storage = x.zone_m * self.lanes / p.min_spacing_m
         if x.queue >= p.congested_fraction * zone_storage:
             self.allowance = storage
         else:

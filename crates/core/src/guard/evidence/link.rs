@@ -95,7 +95,7 @@ impl LinkBalance {
             self.reset();
             return LinkReading::default();
         }
-        let storage = stretch * self.lanes / p.jam_spacing_m;
+        let storage = stretch * self.lanes / p.min_spacing_m;
         if self.last_t.is_none() {
             // what is on the link already is unknown: allow anything up to full
             self.balance = 0.0;
@@ -113,7 +113,7 @@ impl LinkBalance {
 
         // a queue filling the zone may extend onto the link; once it clears,
         // what it held drains at most at saturation flow
-        let zone_storage = x.zone_m * self.lanes / p.jam_spacing_m;
+        let zone_storage = x.zone_m * self.lanes / p.min_spacing_m;
         self.allowance = if x.queue >= p.congested_fraction * zone_storage {
             storage
         } else {
