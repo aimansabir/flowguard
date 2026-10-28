@@ -667,3 +667,13 @@ causes, neither a defect in E1-E5:
   an approach without a measurement (the virtual estimate, flagged as not
   measured), which changes what `StepOutput.states` and the controllers'
   input mean: a decision for the team (Module 3 reads it), not made here.
+- **Before and after E6, exploratory** (right-hand network as in D27,
+  seed 1 fault runs and clean seeds 1-3, `maxpressure` and
+  `maxpressure_hyst_cap`; only E6 differs). A 300 s blackout on the main
+  entry W_J1: missed -> detected in 31 s under `maxpressure`, 13 s both
+  times under `maxpressure_hyst_cap`. A 120 s blackout on internal link
+  J3_J2: 52 -> 43 s and 67 -> 41 s. The spec blackout (side street N2_J2)
+  and dropout: still missed, as expected above. Freeze, undercount,
+  displaced and `mixed`: identical results. Clean runs: FAULTY 0.00-0.07 %
+  of approach-seconds, unchanged; the main-entry blackout runs 0.00 ->
+  0.07 % and 0.00 -> 0.20 %.
