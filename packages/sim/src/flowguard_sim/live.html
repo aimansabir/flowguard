@@ -104,6 +104,7 @@ th:first-child,td:first-child{text-align:left}
 /* guard */
 #p-guard{grid-template-columns:300px minmax(0,1fr) 340px;grid-template-rows:auto minmax(300px,1fr) auto;align-content:start}
 .cams{grid-row:1/4;display:flex;flex-direction:column}
+.gright{grid-column:3;grid-row:1/4;display:grid;gap:16px;align-content:start;min-width:0}
 .cams .grp{font-size:11.5px;letter-spacing:.06em;color:var(--mute);margin:12px 4px 4px;font-weight:600}
 .cam{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px;padding:8px 10px;border-radius:9px;cursor:pointer;border:1px solid transparent;transition:background .12s}
 .cam:hover{background:#14213a}
@@ -194,7 +195,7 @@ code{font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;color:#cbd5
 
 @media (max-width:1400px){
  #p-guard{grid-template-columns:260px minmax(0,1fr)}
- #p-guard .gright{grid-column:2}
+ #p-guard .gright{grid-column:2;grid-row:auto}#p-guard .cams{grid-row:1/span 4}
  #p-research{grid-template-columns:repeat(2,minmax(0,1fr))}.w3,.w2{grid-column:1/-1}
 }
 @media (max-width:1100px){
@@ -202,7 +203,7 @@ code{font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;color:#cbd5
  .three,.bottom,#p-controller,#p-vision{grid-template-columns:minmax(0,1fr)}
  .jdetail{grid-column:auto}
  #p-overview{height:auto;grid-template-rows:420px auto auto}
- #p-guard{grid-template-columns:minmax(0,1fr)}.cams{grid-row:auto}#p-guard .gright{grid-column:auto}
+ #p-guard{grid-template-columns:minmax(0,1fr)}#p-guard .cams{grid-row:auto}#p-guard .gright{grid-column:auto}
  .tiles{grid-template-columns:repeat(3,minmax(0,1fr))}
  .meta{display:none}
 }
@@ -288,7 +289,7 @@ code{font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;color:#cbd5
    <div class="cv"><canvas id="gq"></canvas></div>
    <div class="legend" style="margin-top:10px"><span><i class="ln" style="background:var(--cam)"></i>camera measurement (zone)</span><span><i class="ln" style="background:var(--use)"></i>estimate the controller receives, ± margin</span><span><i class="ln" style="background:var(--truth)"></i>SUMO truth, whole approach (evaluation only)</span><span><i style="background:rgba(236,72,153,.35)"></i>injected fault</span></div></div>
   <div class="card"><h3>Timeline</h3><div class="cv" id="lanes"><canvas id="lanesc"></canvas></div></div>
-  <div class="gright" style="grid-column:3;grid-row:1/4;display:grid;gap:16px;align-content:start">
+  <div class="gright">
    <div class="card"><h3>Recovery status</h3><div class="story" id="gstory"></div></div>
    <div class="card"><h3>Detection evidence</h3><div id="gevd"></div>
     <div class="note" style="margin-top:10px">E1–E5 here come from the Python copy of the checks, held to the Rust scores by a shared parity fixture. They are a diagnostic view. The trust decision is made by the Rust core, which also uses E6 (improbable silence) and a combined score that it does not expose.</div></div>
@@ -695,7 +696,8 @@ function story(a,f){
   if(tr===2)return `<b style="color:var(--badt)">Detected.</b> The injected ${esc(s.f)} started at ${fmtT(active)}; the Guard rated the camera FAULTY ${fz?fmtT(fz.t-active)+" later":""}.${s.ov?" The controller now runs on the virtual estimate.":""}`;
   if(tr===1)return `<b style="color:var(--warn)">Under suspicion.</b> ${esc(s.f)} injected at ${fmtT(active)}; SUSPECT ${sp?fmtT(sp.t-active)+" later":""}, not yet FAULTY.`;
   return `<b>Not detected yet.</b> ${esc(s.f)} injected at ${fmtT(active)} (${fmtT(f.t-active)} ago); the camera is still TRUSTED.`}
- const ended=lastF&&!lastF.f?lastF.t:null;
+ const ended=lastF&&!lastF.f?lastF.t:null,back0=[...trust].reverse().find(e=>e.to===0);
+ if(tr>0&&ended!=null&&back0&&back0.t>=ended)return `<b style="color:${TRC[tr]}">${TRN[tr]} again, with no injected fault.</b> The camera recovered at ${fmtT(back0.t)} after the injected ${esc(lastF.prev)}; nothing is injected on it now, so by the experiment's ground truth this flag is a false alarm.`;
  if(tr>0){if(ended!=null)return `<b style="color:var(--warn)">Recovering.</b> The injected ${esc(lastF.prev)} ended ${fmtT(f.t-ended)} ago. The Guard returns the camera to TRUSTED after ${rec!=null?rec+" s":"a period"} of clean evidence; until then the controller keeps the ${s.ov?"virtual estimate":"camera value"}.`;
   return `<b style="color:${TRC[tr]}">${TRN[tr]} with no injected fault.</b> By the experiment's ground truth this is a false alarm (it may follow a fault on a neighbouring camera).`}
  const back=[...trust].reverse().find(e=>e.to===0);
@@ -750,9 +752,10 @@ function controllerPage(){
  // phase timeline
  const [g,W,H]=fit($("ptlc"));g.clearRect(0,0,W,H);const t1=f.t,x0=Math.max(0,t1-300),x1=Math.max(300,t1),l=34,r=8,X=t=>l+(t-x0)/(x1-x0)*(W-l-r),rh=(H-20)/3;
  g.font="12px Segoe UI,system-ui";JIDS.forEach((jj,ri)=>{const y=ri*rh+4;g.fillStyle=jj===j?"#e7eef8":"#97a6bc";g.fillText(jj,0,y+rh/2+2);
+  let s0=null,c0=null;const ivs=[];const flush=t=>{if(c0){g.fillStyle=c0;g.fillRect(X(s0),y,Math.max(1,X(t)-X(s0)),rh-10)}};
   for(let i=idxAt(x0);i<=S.view;i++){const fr=S.F[i],q=fr.jn[jj];if(!q)continue;const settled=q.st==="green"&&q.ph===q.tg;
-   g.fillStyle=settled?["#3b82f6","#f59e0b","#8b5cf6"][q.ph%3]:"#64748b";g.fillRect(X(fr.t),y,Math.max(1,X(fr.t+1)-X(fr.t)),rh-10);
-   if(q.iv){g.fillStyle="#ef4444";g.fillRect(X(fr.t),y-2,2,rh-6)}}});
+   const c=settled?["#3b82f6","#f59e0b","#8b5cf6"][q.ph%3]:"#64748b";if(c!==c0){flush(fr.t);s0=fr.t;c0=c}if(q.iv)ivs.push(fr.t)}
+  flush(S.F[S.view].t+1);g.fillStyle="#ef4444";for(const t of ivs)g.fillRect(X(t),y-2,2,rh-6)});
  g.fillStyle="#6b7b93";g.font="11px Segoe UI,system-ui";const xs=niceStep(x1-x0,6);for(let s=Math.ceil(x0/xs)*xs;s<=x1;s+=xs){const lb=fmtT(s);g.fillText(lb,Math.min(X(s)-10,W-g.measureText(lb).width-2),H-3)}
  g.fillStyle="#e7eef8";g.fillRect(X(t1),0,1.5,H-16);
  const log=S.EV.filter(e=>e.j&&e.t<=t1).slice(-60).reverse();
