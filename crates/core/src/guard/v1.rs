@@ -121,7 +121,7 @@ impl Guard for GuardV1 {
         }
 
         // G3: every approach, every second, measured or not
-        for a in 0..self.queues.len() {
+        for (a, state) in states.iter().enumerate() {
             let feeders = self.evidence.feeders(a);
             let supply = if feeders.is_empty() {
                 Supply::Entry
@@ -131,7 +131,7 @@ impl Guard for GuardV1 {
                 evidence::sent_toward(input.measurements, feeders, &self.pcu).map_or(Supply::Unknown, Supply::Sent)
             };
             let clean = self.scores[a].is_some_and(|s| s < self.trust_cfg.suspect_score);
-            let anchor = match (&input.measurements[a], &states[a]) {
+            let anchor = match (&input.measurements[a], state) {
                 (Some(m), Some(s)) if self.trust[a].state == TrustState::Trusted && clean => Some(Anchor {
                     queue: s.measured_queue_pcu,
                     arrivals: s.arrivals_pcu,

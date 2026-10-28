@@ -867,8 +867,499 @@
             "kind"
           ],
           "additionalProperties": false
+        },
+        {
+          "title": "GuardV1Config",
+          "description": "Evidence (G1), trust state machine (G2) and virtual sensor (G3) of\ndocs/specs/guard.md. Every block and field may be left out for its\ndefault: `{\"kind\": \"v1\"}` is the documented Guard (D26).",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "v1"
+            },
+            "evidence": {
+              "$ref": "#/$defs/EvidenceConfig",
+              "default": {
+                "quality": {
+                  "brightness_edge": 0.05,
+                  "blur_max": 0.7,
+                  "confidence_min": 0.3,
+                  "track_breaks_max": 30.0,
+                  "displacement_max_px": 20.0,
+                  "weight": 0.5
+                },
+                "frozen": {
+                  "frozen_s": 20.0,
+                  "supply_s": 60.0,
+                  "standing_weight": 0.5
+                },
+                "conservation": {
+                  "window": 60,
+                  "block": 5,
+                  "tolerance": 1.0
+                },
+                "link": {
+                  "free_flow_mps": 13.89,
+                  "fast_factor": 1.2,
+                  "slack_s": 30.0,
+                  "min_spacing_m": 3.5,
+                  "congested_fraction": 0.5,
+                  "saturation_flow": 0.5,
+                  "window_s": 120.0,
+                  "min_volume_pcu": 10.0,
+                  "tolerance": 0.2
+                },
+                "response": {
+                  "startup_s": 4.0,
+                  "stall_s": 15.0,
+                  "stall_weight": 0.5,
+                  "red_window_s": 120.0,
+                  "red_floor_s": 60.0,
+                  "red_tolerance_per_min": {
+                    "left": 2.0,
+                    "straight": 2.0,
+                    "right": 2.0
+                  }
+                }
+              }
+            },
+            "combine": {
+              "$ref": "#/$defs/CombineConfig",
+              "default": {
+                "weights": {
+                  "quality": 1.0,
+                  "frozen": 1.0,
+                  "conservation": 1.0,
+                  "cross_junction": 1.0,
+                  "stalled_green": 1.0,
+                  "red_departures": 1.0
+                }
+              }
+            },
+            "trust": {
+              "$ref": "#/$defs/TrustConfig",
+              "default": {
+                "suspect_score": 0.5,
+                "suspect_s": 5.0,
+                "faulty_score": 0.9,
+                "faulty_s": 10.0,
+                "recover_s": 30.0
+              }
+            },
+            "virtual_sensor": {
+              "$ref": "#/$defs/VirtualSensorConfig",
+              "default": {
+                "arrival_window_s": 300.0,
+                "margin_growth_pcu_per_s": 0.05,
+                "extend_queue_beyond_zone": false
+              }
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ]
         }
       ]
+    },
+    "EvidenceConfig": {
+      "description": "Guard evidence parameters, one block per check (D24, D25). All\nprovisional research values.",
+      "type": "object",
+      "properties": {
+        "quality": {
+          "$ref": "#/$defs/QualityEvidence",
+          "default": {
+            "brightness_edge": 0.05,
+            "blur_max": 0.7,
+            "confidence_min": 0.3,
+            "track_breaks_max": 30.0,
+            "displacement_max_px": 20.0,
+            "weight": 0.5
+          }
+        },
+        "frozen": {
+          "$ref": "#/$defs/FrozenEvidence",
+          "default": {
+            "frozen_s": 20.0,
+            "supply_s": 60.0,
+            "standing_weight": 0.5
+          }
+        },
+        "conservation": {
+          "$ref": "#/$defs/ConservationEvidence",
+          "default": {
+            "window": 60,
+            "block": 5,
+            "tolerance": 1.0
+          }
+        },
+        "link": {
+          "$ref": "#/$defs/LinkEvidence",
+          "default": {
+            "free_flow_mps": 13.89,
+            "fast_factor": 1.2,
+            "slack_s": 30.0,
+            "min_spacing_m": 3.5,
+            "congested_fraction": 0.5,
+            "saturation_flow": 0.5,
+            "window_s": 120.0,
+            "min_volume_pcu": 10.0,
+            "tolerance": 0.2
+          }
+        },
+        "response": {
+          "$ref": "#/$defs/ResponseEvidence",
+          "default": {
+            "startup_s": 4.0,
+            "stall_s": 15.0,
+            "stall_weight": 0.5,
+            "red_window_s": 120.0,
+            "red_floor_s": 60.0,
+            "red_tolerance_per_min": {
+              "left": 2.0,
+              "straight": 2.0,
+              "right": 2.0
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "QualityEvidence": {
+      "description": "E1: the producer's quality report. Any bad flag scores `weight`.",
+      "type": "object",
+      "properties": {
+        "brightness_edge": {
+          "description": "Brightness at or below this is black, at or above 1 - this saturated.",
+          "type": "number",
+          "format": "double",
+          "default": 0.05
+        },
+        "blur_max": {
+          "description": "Blur above this (0 sharp, 1 unusable).",
+          "type": "number",
+          "format": "double",
+          "default": 0.7
+        },
+        "confidence_min": {
+          "description": "Mean detector confidence below this.",
+          "type": "number",
+          "format": "double",
+          "default": 0.3
+        },
+        "track_breaks_max": {
+          "description": "Track breaks per minute above this.",
+          "type": "number",
+          "format": "double",
+          "default": 30.0
+        },
+        "displacement_max_px": {
+          "description": "Scene shift above this, pixels.",
+          "type": "number",
+          "format": "double",
+          "default": 20.0
+        },
+        "weight": {
+          "description": "Score of a bad flag, below 1: a bad image is not proof of bad counts.",
+          "type": "number",
+          "format": "double",
+          "default": 0.5
+        }
+      },
+      "additionalProperties": false
+    },
+    "FrozenEvidence": {
+      "description": "E2: counts repeating when they should change.",
+      "type": "object",
+      "properties": {
+        "frozen_s": {
+          "description": "Seconds of suspicious repetition for a score of 1.",
+          "type": "number",
+          "format": "double",
+          "default": 20.0
+        },
+        "supply_s": {
+          "description": "An upstream departure toward the approach counts as supply this long, s.",
+          "type": "number",
+          "format": "double",
+          "default": 60.0
+        },
+        "standing_weight": {
+          "description": "Score cap for a repeated standing queue, which a blocked exit gives too.",
+          "type": "number",
+          "format": "double",
+          "default": 0.5
+        }
+      },
+      "additionalProperties": false
+    },
+    "ConservationEvidence": {
+      "description": "E5: zone(t) - zone(t-1) - arrivals + departures.",
+      "type": "object",
+      "properties": {
+        "window": {
+          "description": "Residuals kept, intervals.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0,
+          "default": 60
+        },
+        "block": {
+          "description": "Residuals summed over blocks this long, so late departures cancel.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0,
+          "default": 5
+        },
+        "tolerance": {
+          "description": "Mean |block residual| tolerated, vehicles. Score 1 at twice this.",
+          "type": "number",
+          "format": "double",
+          "default": 1.0
+        }
+      },
+      "additionalProperties": false
+    },
+    "LinkEvidence": {
+      "description": "E3: PCU balance on each link between junctions. `free_flow_mps`,\n`saturation_flow` and `min_spacing_m` also drive the virtual sensor (G3).",
+      "type": "object",
+      "properties": {
+        "free_flow_mps": {
+          "description": "Free-flow speed on links, m/s (not in the corridor map).",
+          "type": "number",
+          "format": "double",
+          "default": 13.89
+        },
+        "fast_factor": {
+          "description": "The fastest drivers go this much over free-flow speed.",
+          "type": "number",
+          "format": "double",
+          "default": 1.2
+        },
+        "slack_s": {
+          "description": "Extra seconds the slowest trip may take.",
+          "type": "number",
+          "format": "double",
+          "default": 30.0
+        },
+        "min_spacing_m": {
+          "description": "Metres of lane one PCU takes in the densest standing queue; link\nstorage = length x lanes / this. Not max-pressure's `jam_spacing_m`.",
+          "type": "number",
+          "format": "double",
+          "default": 3.5
+        },
+        "congested_fraction": {
+          "description": "A zone counts as congested, a link as full, from this share of storage.",
+          "type": "number",
+          "format": "double",
+          "default": 0.5
+        },
+        "saturation_flow": {
+          "description": "PCU per second per lane a released queue discharges at.",
+          "type": "number",
+          "format": "double",
+          "default": 0.5
+        },
+        "window_s": {
+          "description": "Seconds of corrections and sent PCU compared.",
+          "type": "number",
+          "format": "double",
+          "default": 120.0
+        },
+        "min_volume_pcu": {
+          "description": "Sent PCU below this count as this much in a window.",
+          "type": "number",
+          "format": "double",
+          "default": 10.0
+        },
+        "tolerance": {
+          "description": "Share of sent PCU the balance may be corrected by. Score 1 at twice this.",
+          "type": "number",
+          "format": "double",
+          "default": 0.2
+        }
+      },
+      "additionalProperties": false
+    },
+    "ResponseEvidence": {
+      "description": "E4: queues discharge under green, nothing leaves under red.",
+      "type": "object",
+      "properties": {
+        "startup_s": {
+          "description": "Seconds into green before departures are expected.",
+          "type": "number",
+          "format": "double",
+          "default": 4.0
+        },
+        "stall_s": {
+          "description": "Seconds of stalled green for the full stall score.",
+          "type": "number",
+          "format": "double",
+          "default": 15.0
+        },
+        "stall_weight": {
+          "description": "Cap on the stall score: gridlock and incidents stall queues too.",
+          "type": "number",
+          "format": "double",
+          "default": 0.5
+        },
+        "red_window_s": {
+          "description": "Seconds of history for red-light departures.",
+          "type": "number",
+          "format": "double",
+          "default": 120.0
+        },
+        "red_floor_s": {
+          "description": "Red seconds below this count as this many.",
+          "type": "number",
+          "format": "double",
+          "default": 60.0
+        },
+        "red_tolerance_per_min": {
+          "description": "Red-light departures per minute of red tolerated.",
+          "$ref": "#/$defs/PerMovement",
+          "default": {
+            "left": 2.0,
+            "straight": 2.0,
+            "right": 2.0
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "PerMovement": {
+      "type": "object",
+      "properties": {
+        "left": {
+          "type": "number",
+          "format": "double"
+        },
+        "straight": {
+          "type": "number",
+          "format": "double"
+        },
+        "right": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "left",
+        "straight",
+        "right"
+      ]
+    },
+    "CombineConfig": {
+      "description": "How the evidence becomes one score per approach (D26): noisy-OR,\n`1 - product(1 - weight x score)` over the checks that could judge.",
+      "type": "object",
+      "properties": {
+        "weights": {
+          "$ref": "#/$defs/CheckWeights",
+          "default": {
+            "quality": 1.0,
+            "frozen": 1.0,
+            "conservation": 1.0,
+            "cross_junction": 1.0,
+            "stalled_green": 1.0,
+            "red_departures": 1.0
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "CheckWeights": {
+      "description": "0-1 multiplier per check; 0 leaves a check out (ablations).",
+      "type": "object",
+      "properties": {
+        "quality": {
+          "type": "number",
+          "format": "double",
+          "default": 1.0
+        },
+        "frozen": {
+          "type": "number",
+          "format": "double",
+          "default": 1.0
+        },
+        "conservation": {
+          "type": "number",
+          "format": "double",
+          "default": 1.0
+        },
+        "cross_junction": {
+          "type": "number",
+          "format": "double",
+          "default": 1.0
+        },
+        "stalled_green": {
+          "type": "number",
+          "format": "double",
+          "default": 1.0
+        },
+        "red_departures": {
+          "type": "number",
+          "format": "double",
+          "default": 1.0
+        }
+      },
+      "additionalProperties": false
+    },
+    "TrustConfig": {
+      "description": "G2 hysteresis. TRUSTED -> SUSPECT once the score has been at least\n`suspect_score` for `suspect_s` seconds; SUSPECT -> FAULTY once it has\nbeen at least `faulty_score` for `faulty_s` seconds; back to TRUSTED\nafter `recover_s` judged seconds below `suspect_score` (D26).",
+      "type": "object",
+      "properties": {
+        "suspect_score": {
+          "type": "number",
+          "format": "double",
+          "default": 0.5
+        },
+        "suspect_s": {
+          "type": "number",
+          "format": "double",
+          "default": 5.0
+        },
+        "faulty_score": {
+          "type": "number",
+          "format": "double",
+          "default": 0.9
+        },
+        "faulty_s": {
+          "type": "number",
+          "format": "double",
+          "default": 10.0
+        },
+        "recover_s": {
+          "type": "number",
+          "format": "double",
+          "default": 30.0
+        }
+      },
+      "additionalProperties": false
+    },
+    "VirtualSensorConfig": {
+      "description": "G3 virtual sensor (D26). Discharge and travel time use\n`evidence.link.saturation_flow` and `free_flow_mps`.",
+      "type": "object",
+      "properties": {
+        "arrival_window_s": {
+          "description": "Trusted seconds the arrival rate is averaged over (entry approaches,\nand internal ones whose upstream cannot be used).",
+          "type": "number",
+          "format": "double",
+          "default": 300.0
+        },
+        "margin_growth_pcu_per_s": {
+          "description": "`margin` growth per second since the last trusted reading, PCU/s.",
+          "type": "number",
+          "format": "double",
+          "default": 0.05
+        },
+        "extend_queue_beyond_zone": {
+          "description": "While TRUSTED with a full zone, report the virtual queue when it is\nlonger than the camera can see (the queue extends past the zone).",
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "additionalProperties": false
     },
     "StepOutput": {
       "description": "Everything `Core::step` produces for one second.",

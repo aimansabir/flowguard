@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, RootModel
+from pydantic import BaseModel, ConfigDict, Field
 from typing_extensions import TypeAliasType
 
 
@@ -208,10 +208,197 @@ class PassthroughGuardConfig(BaseModel):
     kind: Literal["passthrough"]
 
 
-class GuardConfig(RootModel[PassthroughGuardConfig]):
-    root: PassthroughGuardConfig
+class QualityEvidence(BaseModel):
     """
-    Which Guard rates the measurements.
+    E1: the producer's quality report. Any bad flag scores `weight`.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    brightness_edge: float | None = 0.05
+    """
+    Brightness at or below this is black, at or above 1 - this saturated.
+    """
+    blur_max: float | None = 0.7
+    """
+    Blur above this (0 sharp, 1 unusable).
+    """
+    confidence_min: float | None = 0.3
+    """
+    Mean detector confidence below this.
+    """
+    track_breaks_max: float | None = 30.0
+    """
+    Track breaks per minute above this.
+    """
+    displacement_max_px: float | None = 20.0
+    """
+    Scene shift above this, pixels.
+    """
+    weight: float | None = 0.5
+    """
+    Score of a bad flag, below 1: a bad image is not proof of bad counts.
+    """
+
+
+class FrozenEvidence(BaseModel):
+    """
+    E2: counts repeating when they should change.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    frozen_s: float | None = 20.0
+    """
+    Seconds of suspicious repetition for a score of 1.
+    """
+    supply_s: float | None = 60.0
+    """
+    An upstream departure toward the approach counts as supply this long, s.
+    """
+    standing_weight: float | None = 0.5
+    """
+    Score cap for a repeated standing queue, which a blocked exit gives too.
+    """
+
+
+class ConservationEvidence(BaseModel):
+    """
+    E5: zone(t) - zone(t-1) - arrivals + departures.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    window: Annotated[int | None, Field(ge=0)] = 60
+    """
+    Residuals kept, intervals.
+    """
+    block: Annotated[int | None, Field(ge=0)] = 5
+    """
+    Residuals summed over blocks this long, so late departures cancel.
+    """
+    tolerance: float | None = 1.0
+    """
+    Mean |block residual| tolerated, vehicles. Score 1 at twice this.
+    """
+
+
+class LinkEvidence(BaseModel):
+    """
+    E3: PCU balance on each link between junctions. `free_flow_mps`,
+    `saturation_flow` and `min_spacing_m` also drive the virtual sensor (G3).
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    free_flow_mps: float | None = 13.89
+    """
+    Free-flow speed on links, m/s (not in the corridor map).
+    """
+    fast_factor: float | None = 1.2
+    """
+    The fastest drivers go this much over free-flow speed.
+    """
+    slack_s: float | None = 30.0
+    """
+    Extra seconds the slowest trip may take.
+    """
+    min_spacing_m: float | None = 3.5
+    """
+    Metres of lane one PCU takes in the densest standing queue; link
+    storage = length x lanes / this. Not max-pressure's `jam_spacing_m`.
+    """
+    congested_fraction: float | None = 0.5
+    """
+    A zone counts as congested, a link as full, from this share of storage.
+    """
+    saturation_flow: float | None = 0.5
+    """
+    PCU per second per lane a released queue discharges at.
+    """
+    window_s: float | None = 120.0
+    """
+    Seconds of corrections and sent PCU compared.
+    """
+    min_volume_pcu: float | None = 10.0
+    """
+    Sent PCU below this count as this much in a window.
+    """
+    tolerance: float | None = 0.2
+    """
+    Share of sent PCU the balance may be corrected by. Score 1 at twice this.
+    """
+
+
+class PerMovement(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    left: float
+    straight: float
+    right: float
+
+
+class CheckWeights(BaseModel):
+    """
+    0-1 multiplier per check; 0 leaves a check out (ablations).
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    quality: float | None = 1.0
+    frozen: float | None = 1.0
+    conservation: float | None = 1.0
+    cross_junction: float | None = 1.0
+    stalled_green: float | None = 1.0
+    red_departures: float | None = 1.0
+
+
+class TrustConfig(BaseModel):
+    """
+    G2 hysteresis. TRUSTED -> SUSPECT once the score has been at least
+    `suspect_score` for `suspect_s` seconds; SUSPECT -> FAULTY once it has
+    been at least `faulty_score` for `faulty_s` seconds; back to TRUSTED
+    after `recover_s` judged seconds below `suspect_score` (D26).
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    suspect_score: float | None = 0.5
+    suspect_s: float | None = 5.0
+    faulty_score: float | None = 0.9
+    faulty_s: float | None = 10.0
+    recover_s: float | None = 30.0
+
+
+class VirtualSensorConfig(BaseModel):
+    """
+    G3 virtual sensor (D26). Discharge and travel time use
+    `evidence.link.saturation_flow` and `free_flow_mps`.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    arrival_window_s: float | None = 300.0
+    """
+    Trusted seconds the arrival rate is averaged over (entry approaches,
+    and internal ones whose upstream cannot be used).
+    """
+    margin_growth_pcu_per_s: float | None = 0.05
+    """
+    `margin` growth per second since the last trusted reading, PCU/s.
+    """
+    extend_queue_beyond_zone: bool | None = False
+    """
+    While TRUSTED with a full zone, report the virtual queue when it is
+    longer than the camera can see (the queue extends past the zone).
     """
 
 
@@ -380,6 +567,61 @@ class MaxPressureControllerConfig(BaseModel):
     capacity: Capacity | None = None
 
 
+class ResponseEvidence(BaseModel):
+    """
+    E4: queues discharge under green, nothing leaves under red.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    startup_s: float | None = 4.0
+    """
+    Seconds into green before departures are expected.
+    """
+    stall_s: float | None = 15.0
+    """
+    Seconds of stalled green for the full stall score.
+    """
+    stall_weight: float | None = 0.5
+    """
+    Cap on the stall score: gridlock and incidents stall queues too.
+    """
+    red_window_s: float | None = 120.0
+    """
+    Seconds of history for red-light departures.
+    """
+    red_floor_s: float | None = 60.0
+    """
+    Red seconds below this count as this many.
+    """
+    red_tolerance_per_min: Annotated[
+        PerMovement | None, Field(validate_default=True)
+    ] = {"left": 2.0, "straight": 2.0, "right": 2.0}
+    """
+    Red-light departures per minute of red tolerated.
+    """
+
+
+class CombineConfig(BaseModel):
+    """
+    How the evidence becomes one score per approach (D26): noisy-OR,
+    `1 - product(1 - weight x score)` over the checks that could judge.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    weights: Annotated[CheckWeights | None, Field(validate_default=True)] = {
+        "quality": 1.0,
+        "frozen": 1.0,
+        "conservation": 1.0,
+        "cross_junction": 1.0,
+        "stalled_green": 1.0,
+        "red_departures": 1.0,
+    }
+
+
 class StepOutput(BaseModel):
     """
     Everything `Core::step` produces for one second.
@@ -469,6 +711,120 @@ class Corridor(BaseModel):
     exits: list[Exit]
 
 
+class EvidenceConfig(BaseModel):
+    """
+    Guard evidence parameters, one block per check (D24, D25). All
+    provisional research values.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    quality: Annotated[QualityEvidence | None, Field(validate_default=True)] = {
+        "brightness_edge": 0.05,
+        "blur_max": 0.7,
+        "confidence_min": 0.3,
+        "track_breaks_max": 30.0,
+        "displacement_max_px": 20.0,
+        "weight": 0.5,
+    }
+    frozen: Annotated[FrozenEvidence | None, Field(validate_default=True)] = {
+        "frozen_s": 20.0,
+        "supply_s": 60.0,
+        "standing_weight": 0.5,
+    }
+    conservation: Annotated[
+        ConservationEvidence | None, Field(validate_default=True)
+    ] = {"window": 60, "block": 5, "tolerance": 1.0}
+    link: Annotated[LinkEvidence | None, Field(validate_default=True)] = {
+        "free_flow_mps": 13.89,
+        "fast_factor": 1.2,
+        "slack_s": 30.0,
+        "min_spacing_m": 3.5,
+        "congested_fraction": 0.5,
+        "saturation_flow": 0.5,
+        "window_s": 120.0,
+        "min_volume_pcu": 10.0,
+        "tolerance": 0.2,
+    }
+    response: Annotated[ResponseEvidence | None, Field(validate_default=True)] = {
+        "startup_s": 4.0,
+        "stall_s": 15.0,
+        "stall_weight": 0.5,
+        "red_window_s": 120.0,
+        "red_floor_s": 60.0,
+        "red_tolerance_per_min": {"left": 2.0, "straight": 2.0, "right": 2.0},
+    }
+
+
+class GuardV1Config(BaseModel):
+    """
+    Evidence (G1), trust state machine (G2) and virtual sensor (G3) of
+    docs/specs/guard.md. Every block and field may be left out for its
+    default: `{"kind": "v1"}` is the documented Guard (D26).
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    kind: Literal["v1"]
+    evidence: Annotated[EvidenceConfig | None, Field(validate_default=True)] = {
+        "quality": {
+            "brightness_edge": 0.05,
+            "blur_max": 0.7,
+            "confidence_min": 0.3,
+            "track_breaks_max": 30.0,
+            "displacement_max_px": 20.0,
+            "weight": 0.5,
+        },
+        "frozen": {"frozen_s": 20.0, "supply_s": 60.0, "standing_weight": 0.5},
+        "conservation": {"window": 60, "block": 5, "tolerance": 1.0},
+        "link": {
+            "free_flow_mps": 13.89,
+            "fast_factor": 1.2,
+            "slack_s": 30.0,
+            "min_spacing_m": 3.5,
+            "congested_fraction": 0.5,
+            "saturation_flow": 0.5,
+            "window_s": 120.0,
+            "min_volume_pcu": 10.0,
+            "tolerance": 0.2,
+        },
+        "response": {
+            "startup_s": 4.0,
+            "stall_s": 15.0,
+            "stall_weight": 0.5,
+            "red_window_s": 120.0,
+            "red_floor_s": 60.0,
+            "red_tolerance_per_min": {"left": 2.0, "straight": 2.0, "right": 2.0},
+        },
+    }
+    combine: Annotated[CombineConfig | None, Field(validate_default=True)] = {
+        "weights": {
+            "quality": 1.0,
+            "frozen": 1.0,
+            "conservation": 1.0,
+            "cross_junction": 1.0,
+            "stalled_green": 1.0,
+            "red_departures": 1.0,
+        }
+    }
+    trust: Annotated[TrustConfig | None, Field(validate_default=True)] = {
+        "suspect_score": 0.5,
+        "suspect_s": 5.0,
+        "faulty_score": 0.9,
+        "faulty_s": 10.0,
+        "recover_s": 30.0,
+    }
+    virtual_sensor: Annotated[
+        VirtualSensorConfig | None, Field(validate_default=True)
+    ] = {
+        "arrival_window_s": 300.0,
+        "margin_growth_pcu_per_s": 0.05,
+        "extend_queue_beyond_zone": False,
+    }
+
+
 class CoreConfig(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -476,9 +832,12 @@ class CoreConfig(BaseModel):
     pcu: PcuWeights
     timing: SignalTiming
     controller: FixedControllerConfig | MaxPressureControllerConfig
-    guard: Annotated[GuardConfig | None, Field(validate_default=True)] = {
-        "kind": "passthrough"
-    }
+    guard: Annotated[
+        PassthroughGuardConfig | GuardV1Config | None, Field(validate_default=True)
+    ] = {"kind": "passthrough"}
+    """
+    Which Guard rates the measurements.
+    """
 
 
 class Contracts(BaseModel):

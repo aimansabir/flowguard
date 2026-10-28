@@ -430,6 +430,8 @@ pub struct Hysteresis {
 /// Which Guard rates the measurements.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+// read once when the core starts; boxing v1 would only add noise
+#[allow(clippy::large_enum_variant)]
 pub enum GuardConfig {
     /// Trust every measurement as it is (the naive adaptive baseline).
     #[default]
@@ -645,10 +647,10 @@ impl Default for CheckWeights {
     }
 }
 
-/// G2 hysteresis. TRUSTED -> SUSPECT after `suspect_s` seconds with score
-/// >= `suspect_score`; SUSPECT -> FAULTY after `faulty_s` seconds with
-/// score >= `faulty_score`; back to TRUSTED after `recover_s` judged
-/// seconds below `suspect_score` (D26).
+/// G2 hysteresis. TRUSTED -> SUSPECT once the score has been at least
+/// `suspect_score` for `suspect_s` seconds; SUSPECT -> FAULTY once it has
+/// been at least `faulty_score` for `faulty_s` seconds; back to TRUSTED
+/// after `recover_s` judged seconds below `suspect_score` (D26).
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct TrustConfig {
