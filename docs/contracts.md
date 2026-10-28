@@ -91,8 +91,8 @@ D26). v1's blocks, each optional with every field defaulted:
 
 | block | fields | meaning |
 |---|---|---|
-| `evidence` | `quality`, `frozen`, `conservation`, `link`, `response` | parameters of checks E1, E2, E5, E3, E4 (D24, D25) |
-| `combine` | `weights` {`quality`, `frozen`, `conservation`, `cross_junction`, `stalled_green`, `red_departures`} | 0-1 per check in the noisy-OR score, default 1 |
+| `evidence` | `quality`, `frozen`, `conservation`, `link`, `response`, `silence` | parameters of checks E1, E2, E5, E3, E4 (D24, D25) and E6 (`p_start`, `p_full`, D28) |
+| `combine` | `weights` {`quality`, `frozen`, `conservation`, `cross_junction`, `stalled_green`, `red_departures`, `silence`} | 0-1 per check in the noisy-OR score, default 1 |
 | `trust` | `suspect_score`, `suspect_s`, `faulty_score`, `faulty_s`, `recover_s` | G2 thresholds (score 0-1) and durations (s) |
 | `virtual_sensor` | `arrival_window_s`, `margin_growth_pcu_per_s`, `extend_queue_beyond_zone` | G3 trusted-rate window (s), margin growth (PCU/s), report the virtual queue past a full zone while trusted |
 

@@ -92,6 +92,14 @@ impl VirtualQueue {
         if s > 0.0 { pcu / s } else { 0.0 }
     }
 
+    /// The trusted arrival rate once a full `arrival_window_s` of trusted
+    /// seconds backs it; None before (a rate from a handful of seconds is
+    /// not a rate).
+    pub fn settled_arrival_rate(&self) -> Option<f64> {
+        let kept: f64 = self.trusted_arrivals.iter().map(|&(dt, _)| dt).sum();
+        (kept >= self.p.arrival_window_s - 1e-9).then(|| self.arrival_rate())
+    }
+
     /// One interval ending at `t`.
     pub fn update(&mut self, t: f64, x: &QueueInput) {
         // A: what reaches the stop line this interval
@@ -230,6 +238,18 @@ mod tests {
             step(&mut v, t, true, Supply::Entry, None);
         }
         assert_eq!(v.arrival_rate(), 1.0);
+    }
+
+    #[test]
+    fn settled_rate_needs_a_full_window() {
+        let p = QueueParams { arrival_window_s: 10.0, ..params() };
+        let mut v = VirtualQueue::new(p);
+        for t in 0..9 {
+            step(&mut v, t, false, Supply::Entry, anchor(0.0, 1.0));
+        }
+        assert_eq!(v.settled_arrival_rate(), None);
+        step(&mut v, 9, false, Supply::Entry, anchor(0.0, 1.0));
+        assert_eq!(v.settled_arrival_rate(), Some(1.0));
     }
 
     #[test]

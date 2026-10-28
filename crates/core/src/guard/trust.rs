@@ -23,6 +23,7 @@ pub fn combine(e: &Evidence, w: &CheckWeights) -> Option<f64> {
         (e.cross_junction, w.cross_junction),
         (e.stalled_green, w.stalled_green),
         (e.red_departures, w.red_departures),
+        (e.silence, w.silence),
     ];
     let mut clean = 1.0;
     let mut judged = false;
@@ -45,7 +46,8 @@ pub fn can_confirm_clean(e: &Evidence) -> bool {
 
 pub fn validate(c: &TrustConfig, w: &CheckWeights) -> Result<()> {
     let fraction = |x: f64| (0.0..=1.0).contains(&x);
-    let weights = [w.quality, w.frozen, w.conservation, w.cross_junction, w.stalled_green, w.red_departures];
+    let weights =
+        [w.quality, w.frozen, w.conservation, w.cross_junction, w.stalled_green, w.red_departures, w.silence];
     let ok = c.suspect_score > 0.0
         && c.suspect_score <= c.faulty_score
         && c.faulty_score <= 1.0
@@ -142,6 +144,7 @@ mod tests {
             cross_junction: scores[3],
             stalled_green: scores[4],
             red_departures: scores[5],
+            silence: None,
         }
     }
 

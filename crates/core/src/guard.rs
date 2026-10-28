@@ -2,6 +2,7 @@
 //! not, what queue the controller should use instead. See docs/specs/guard.md.
 
 pub mod evidence;
+pub mod silence;
 pub mod trust;
 pub mod v1;
 pub mod virtual_sensor;

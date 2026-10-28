@@ -14,12 +14,13 @@
 //! longer than the camera can see, with `override_flag` set.
 
 use crate::contracts::{
-    ApproachState, CheckWeights, CombineConfig, EvidenceConfig, PcuWeights, TrustConfig, TrustState,
-    VirtualSensorConfig,
+    ApproachState, CheckWeights, CombineConfig, EvidenceConfig, PcuWeights, SilenceEvidence, TrustConfig,
+    TrustState, VirtualSensorConfig,
 };
 use crate::corridor::CorridorIndex;
 use crate::error::{Error, Result};
 use crate::guard::evidence::{self, EvidenceParams, EvidenceTracker, Signal};
+use crate::guard::silence::{self, Silence};
 use crate::guard::trust::{self, Trust};
 use crate::guard::virtual_sensor::{Anchor, QueueInput, QueueParams, Supply, VirtualQueue};
 use crate::guard::{Guard, GuardInput};
@@ -34,6 +35,8 @@ pub struct GuardV1 {
     congested_fraction: f64,
     min_spacing_m: f64,
     lanes: Vec<f64>,
+    silence_cfg: SilenceEvidence,
+    silence: Vec<Silence>,
     trust: Vec<Trust>,
     queues: Vec<VirtualQueue>,
     /// Last interval seen per approach, to advance the estimate without a measurement.
@@ -53,6 +56,7 @@ impl GuardV1 {
     ) -> Result<Self> {
         let params = EvidenceParams::from(evidence);
         trust::validate(trust, &combine.weights)?;
+        silence::validate(&evidence.silence)?;
         if !(vs.arrival_window_s > 0.0 && vs.margin_growth_pcu_per_s >= 0.0) {
             return Err(Error::Config("invalid virtual sensor parameters".into()));
         }
@@ -81,6 +85,8 @@ impl GuardV1 {
             congested_fraction: params.congested_fraction,
             min_spacing_m: params.min_spacing_m,
             lanes: approaches.iter().map(|a| f64::from(a.lanes)).collect(),
+            silence_cfg: evidence.silence,
+            silence: vec![Silence::default(); n],
             trust: vec![Trust::default(); n],
             queues,
             interval: vec![1.0; n],
@@ -110,8 +116,16 @@ impl Guard for GuardV1 {
     }
 
     fn rate(&mut self, input: &GuardInput<'_>, states: &mut [Option<ApproachState>]) {
-        // G1 and G2: evidence, one score, trust (held without a measurement)
-        let rated = self.evidence.update(input);
+        // G1 and G2: evidence, one score, trust (held without a measurement).
+        // E6 needs each approach's trusted arrival rate, which the virtual
+        // sensor keeps (from earlier seconds).
+        let mut rated = self.evidence.update(input);
+        for (a, e) in rated.iter_mut().enumerate() {
+            if let Some(m) = &input.measurements[a] {
+                let rate = self.queues[a].settled_arrival_rate();
+                e.silence = self.silence[a].update(silence::is_empty(m), m.interval_s, rate, &self.silence_cfg);
+            }
+        }
         for (a, e) in rated.iter().enumerate() {
             self.scores[a] = trust::combine(e, &self.weights);
             if let Some(m) = &input.measurements[a] {
@@ -374,6 +388,42 @@ mod tests {
         assert_eq!(rig.guard.trust_state(B_W), TrustState::Faulty);
         assert_eq!(rig.guard.trust_state(A_W), TrustState::Trusted);
         assert_eq!(rig.guard.trust_state(A_N), TrustState::Trusted);
+    }
+
+    /// a_n under green: `healthy` seconds with a car through every `every` s,
+    /// then all zeros; returns the first second it is FAULTY.
+    fn entry_goes_silent(healthy: i32, every: i32, until: i32) -> Option<i32> {
+        let mut rig = Rig::new(TrustConfig::default());
+        let mut faulty = None;
+        for t in 0..until {
+            let car = u32::from(t < healthy && t % every == 0);
+            let s = rig.step(f64::from(t), vec![meas("a_n", f64::from(t), 0, 0, car, car)], &green_a_n());
+            if faulty.is_none() && s[A_N].as_ref().unwrap().trust_state == TrustState::Faulty {
+                faulty = Some(t);
+            }
+        }
+        faulty
+    }
+
+    #[test]
+    fn blackout_on_a_busy_entry_road_becomes_faulty() {
+        // the silence starts after the last car (t = 396); the 300 trusted
+        // seconds before it held 75 cars, 0.25 PCU/s: score 0.9 (p below
+        // 10^-4.8) after 45 s, FAULTY 10 s later, t = 450. No other check
+        // sees an all-zero entry camera.
+        assert_eq!(entry_goes_silent(400, 4, 600), Some(450));
+    }
+
+    #[test]
+    fn quiet_entry_road_going_empty_stays_trusted() {
+        // 0.02 PCU/s: five empty minutes are plausible (p of about 0.002)
+        assert_eq!(entry_goes_silent(300, 50, 600), None);
+    }
+
+    #[test]
+    fn silence_is_not_judged_before_a_full_trusted_window() {
+        // the first car alone would make the rate 1 PCU/s
+        assert_eq!(entry_goes_silent(1, 50, 299), None);
     }
 
     #[test]

@@ -620,3 +620,50 @@ the Guard documented here. `run.py --guard v1` selects it.
   replacing the frozen 18.5 PCU and the margin growing to 29.5 PCU by
   1499 s, TRUSTED again at 1531 s. The H2 targets (scope.md) need 10 seeds
   and remain the formal Guard evaluation.
+
+## D28. Why blackout and dropout were missed; E6 improbable silence (2026-10-28)
+The exploratory runs (D27) detected freeze, undercount and displaced, never
+the spec's blackout (N2_J2, 1200-1320 s) or dropout (E_J3). Two different
+causes, neither a defect in E1-E5:
+
+- **Blackout: not enough evidence in that scenario.** An all-zero camera
+  is exactly what an empty road reports. On an entry approach no check
+  could tell them apart: E2 counts a repeat only with vehicles in the zone
+  or sent from upstream (none upstream of an entry), E3 needs an upstream
+  camera, E4 sees no queue and no red-light departure, E5 is satisfied by
+  zeros, and the simulator reports no image quality (E1). The one signal
+  left is the camera's own history: on an approach that has been carrying
+  r vehicles a second, T seconds with none at all have probability
+  exp(-r T). Measured on the exploratory runs, natural silences on clean
+  approaches never got below p of about 10^-2.1; the spec blackout, on a
+  side street at about 0.06 PCU/s, only reached about 10^-3.2 in its last
+  second: about six vehicles were expected in the whole two minutes. No
+  sound test calls that FAULTY without flagging ordinary quiet spells. The
+  same blackout on a main-road entry (about 0.2 PCU/s) is another matter:
+  E1-E5 missed it too, and E3 then blamed the downstream camera for the
+  vehicles that appeared from nowhere.
+- **E6 improbable silence** (`guard/silence.rs`, `evidence.silence`,
+  `combine.weights.silence`; additive contract change). Per approach, the
+  run of consecutive all-zero measurements (zone, queue, arrivals,
+  departures) of T seconds is scored from -log10 p, p = exp(-r T), with r
+  the approach's trusted arrival rate (G3: mean arrivals over the last
+  `arrival_window_s` trusted seconds) frozen when the silence starts, so
+  the silence cannot lower its own rate. Score 0 down to `p_start` 10^-3,
+  1 at `p_full` 10^-5, linear in -log10 p between: fixed significance
+  levels, not fitted to a run (10^-3 is ten times rarer than the rarest
+  natural silence seen). r is in PCU, which a motorcycle counts as half:
+  fewer PCU than vehicles, so p comes out larger, i.e. conservative. No
+  score (null) until a full trusted window backs r: a rate from the first
+  few seconds is not a rate (found by a unit test: one car at t = 0 made r
+  1 PCU/s and normal gaps FAULTY). Minimum detectable blackout: 4.8 x ln 10
+  / r seconds to reach 0.9, i.e. 44 s at 0.25 PCU/s, 4.6 min at 0.04 PCU/s.
+- **Dropout: an architecture gap, left open.** A missing measurement is
+  not hidden from the core: the Guard holds trust and the virtual sensor
+  keeps running. But the core emits a state only for approaches that sent
+  a measurement, so there is no verdict to score and the controller's
+  `queue()` reads a missing approach as 0. In the exploratory dropout run
+  E_J3 was missing 719 of 3600 s while its real queue averaged 18.9 PCU
+  (574 s above 5 PCU). Closing this means the core reporting a state for
+  an approach without a measurement (the virtual estimate, flagged as not
+  measured), which changes what `StepOutput.states` and the controllers'
+  input mean: a decision for the team (Module 3 reads it), not made here.
