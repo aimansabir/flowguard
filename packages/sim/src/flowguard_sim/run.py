@@ -2,6 +2,7 @@
 
     uv run python -m flowguard_sim.run --controller fixed --seconds 3600 --seed 1
     uv run python -m flowguard_sim.run --controller fixed --faults freeze   # config/faults/freeze.json
+    uv run python -m flowguard_sim.run --controller maxpressure --guard v1 --faults mixed
 
 Each second: SUMO -> observer -> fault hook -> core (Guard -> controller ->
 envelope) -> SUMO. Logged to results/<run_id>/:
@@ -40,11 +41,16 @@ from flowguard_sim.sumo_env import sumo_binary
 
 CONTROLLERS = ("fixed", "fixed_webster", "fixed_webster_wave",
                "maxpressure", "maxpressure_hyst", "maxpressure_hyst_cap")
+GUARDS = ("passthrough", "v1")
 LOGS = ("truth", "measurements", "states", "commands")
 FROM_CONFIG: Literal["config"] = "config"
 
 
-def core_config(controller: str) -> CoreConfig:
+def core_config(controller: str, guard: str = "passthrough") -> CoreConfig:
+    """guard: "passthrough" (trust every camera) or "v1" (docs/decisions.md
+    D26, every parameter at its default)."""
+    if guard not in GUARDS:
+        raise ValueError(f"unknown guard {guard!r}")
     mp = load_json("config/maxpressure.json")
     if controller == "fixed":
         ctl: dict[str, Any] = {"kind": "fixed", "green_s": load_json("config/fixed.json")["green_s"]}
@@ -62,6 +68,7 @@ def core_config(controller: str) -> CoreConfig:
         "pcu": load_json("config/pcu.json")["weights"],
         "timing": without_notes(load_json("config/signal.json")),
         "controller": ctl,
+        "guard": {"kind": guard},
     })
 
 
@@ -71,10 +78,10 @@ def _jsonl(records: list[BaseModel]) -> str:
 
 def run(controller: str, seconds: int, seed: int, results_dir: Path = ROOT / "results",
         camera_zone_m: float | None | Literal["config"] = FROM_CONFIG,
-        faults: str | None = None) -> dict[str, Any]:
+        faults: str | None = None, guard: str = "passthrough") -> dict[str, Any]:
     """camera_zone_m: metres the simulated camera sees; None = the whole edge;
     FROM_CONFIG = take it from config/sim.json. faults: scenario name in
-    config/faults/, None = clean camera."""
+    config/faults/, None = clean camera. guard: see core_config."""
     if seconds <= 0:
         raise ValueError("seconds must be > 0")
     sim_cfg = load_json("config/sim.json")
@@ -84,10 +91,12 @@ def run(controller: str, seconds: int, seed: int, results_dir: Path = ROOT / "re
     demand = ensure_demand(seed, corridor, load_json("config/demand.json"), ROOT / sim_cfg["demand_dir"])
     injector = FaultInjector(load_scenario(faults, corridor, zone) if faults else None)
 
-    core = Core(corridor_path.read_text(), core_config(controller).model_dump_json())
+    core = Core(corridor_path.read_text(), core_config(controller, guard).model_dump_json())
     zone_tag = "full" if zone is None else f"{zone:g}m"
     fault_tag = f"_{faults}" if faults else ""
-    run_id = f"{controller}_seed{seed}_{seconds}s_{zone_tag}{fault_tag}_{datetime.now():%Y%m%d-%H%M%S-%f}"
+    guard_tag = "" if guard == "passthrough" else f"_guard{guard}"
+    run_id = (f"{controller}{guard_tag}_seed{seed}_{seconds}s_{zone_tag}{fault_tag}"
+              f"_{datetime.now():%Y%m%d-%H%M%S-%f}")
     out = Path(results_dir) / run_id
     out.mkdir(parents=True)
 
@@ -191,6 +200,9 @@ if __name__ == "__main__":
                         help="simulated camera sees the whole approach edge (v1 behaviour)")
     parser.add_argument("--faults", metavar="SCENARIO",
                         help="fault scenario name in config/faults/ (default: no faults)")
+    parser.add_argument("--guard", choices=GUARDS, default="passthrough",
+                        help="Guard rating the measurements (default: passthrough)")
     args = parser.parse_args()
     print_summary(run(args.controller, args.seconds, args.seed,
-                      camera_zone_m=None if args.full_edge else FROM_CONFIG, faults=args.faults))
+                      camera_zone_m=None if args.full_edge else FROM_CONFIG, faults=args.faults,
+                      guard=args.guard))
