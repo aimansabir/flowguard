@@ -317,3 +317,115 @@ levels from the vision evaluation.
   from E5's tail after a fault ends. E2 freeze 93-97 %, internal blackout
   81-92 %. E5 undercount keep 0.4 88 %, keep 0.7 16-36 %; displaced 40 m
   19-64 %, 20 m 0-13 %; at score >= 0.5 these rise to 59-99 % and 8-87 %.
+
+## D25. Guard evidence E3, E4 (G1, 2026-10-28)
+`crates/core/src/guard/evidence/link.rs` (E3) and `response.rs` (E4)
+complete G1. As in D24 the scores are 0-1 or null, no Guard uses them yet,
+and `PassThrough`, runs and contracts are unchanged. `EvidenceTracker::new`
+now takes the core's PCU weights.
+
+- **Inputs the map lacks.** E3 needs a free-flow speed and how densely
+  vehicles pack; the corridor map has neither, only SUMO's network files
+  do. Decided by the module owner: internal provisional parameters, no
+  contract change. If a real site needs them per link, add them to the
+  corridor format together with the G2 `GuardConfig` change.
+- **E3, conservation across junctions.** The feeders of an approach are
+  every upstream approach and movement whose target is it (through traffic
+  and side-street turns); approaches without feeders (entries) have no E3.
+  Per link a running balance of PCU between the upstream stop line and the
+  camera zone: + sent (feeder departures) - arrived (zone arrivals). Each
+  second it is held between two bounds: at least what was sent too recently
+  to have arrived (`stretch / (v * fast_factor)`, 13.5 s on our links, with
+  stretch = link length - zone length), at most what was sent within the
+  slowest trip (`stretch / v + slack_s`, 46.2 s) plus an allowance for a
+  queue held on the link, and never more than the link stores
+  (`stretch * lanes / jam_spacing_m`, 128.6 PCU). The allowance is the full
+  storage while the downstream zone is congested and drains at saturation
+  flow after. How far the balance had to be pushed back is the evidence:
+  share = corrections / max(sent, `min_volume_pcu`) over `link_window_s`,
+  score = (share - 0.2) / 0.2 clamped to 0-1. Both directions count
+  (vehicles vanishing: undercount, blackout; appearing: double counting).
+  While the allowance is above zero the balance is only known to lie
+  between the bounds, so corrections then are a silent re-sync and only
+  more than the link stores counts. Found in the seed-1 calibration: without
+  this, an error stored during congestion surfaced as evidence up to 900 s
+  after the fault, when the queue cleared. The bounds also stop small
+  miscounts from building up. A fresh balance (start, or any missing
+  measurement on the link or a feeder) assumes the link may be full, and is
+  judged only once the allowance has run out and a slowest trip has passed
+  (175 s on our links). A camera that sees the whole link leaves nothing to
+  balance: no E3.
+- **E4, command response.** Uses the envelope's Command, as `Signal`: green
+  with its elapsed time, clearing (yellow or all-red of the approach's own
+  phase), or red (another phase holds the junction). E2's `is_green` now
+  reads the same function. Stalled green counts seconds of green past
+  `startup_s` with a queue at the start of the interval, no departure, and
+  every link the approach feeds known not to be full (E3 fill below
+  `congested_fraction`). A departure under green resets it; red, clearing,
+  an unknown or full exit and missing data hold it. It asks for departures,
+  not a shrinking queue, so arrivals during green do not matter. Score =
+  min(1, stalled / `stall_s`) * `stall_weight`: a queue that never
+  discharges has innocent causes too. In the clean fixed-time run J2_J3's
+  head vehicle was stuck inside junction J3 for about 300 s of green
+  (gridlock; J2_J3's exits leave the corridor, so the spillback check cannot
+  help), which scored as a full fault before the cap. Red departures: per
+  movement, departures under red per minute of red over `red_window_s` (red
+  time floored at `red_floor_s`); score = max over movements of
+  (rate - tolerance) / tolerance clamped. The corridor map lights every
+  movement of an approach with its phase (`signals.py`), so nothing may go
+  on red here, and the map cannot express a free turn. Real video will need
+  the tolerances raised, especially for the free nearside turn: left in
+  Karachi's left-hand traffic (the SUMO network drives on the right, so its
+  "left" is the far-side turn).
+- **Parameters** (`EvidenceParams`, all provisional research values):
+  `free_flow_mps` 13.89 (50 km/h urban limit, equal to SUMO's speed on the
+  four main-road links E3 covers); `fast_factor` 1.2 (SUMO's fastest car,
+  16.7 m/s); `slack_s` 30 (start from a stop, rickshaws and qingqis at
+  11.1 m/s, crossing the junction, yielding left turns); `jam_spacing_m` 3.5
+  (densest seen: clean seed-1 runs held 31 PCU in a 60 m two-lane zone,
+  3.9 m per PCU-lane; set denser so storage is an upper bound; car-only
+  queues are about 7 m); `congested_fraction` 0.5 (a queue reaching the back
+  of the zone at about 7 m per PCU); `saturation_flow` 0.5 PCU/s per lane
+  (1800 PCU/h, the usual base value); `link_window_s` 120 (longer than a
+  signal cycle: fixed plan 70 s, max red 90 s); `min_volume_pcu` 10 (about
+  300 PCU/h); `link_tolerance` 0.2; `startup_s` 4 (start-up lost time about
+  2 s plus one saturation headway); `stall_s` 15; `stall_weight` 0.5;
+  `red_window_s` 120, `red_floor_s` 60, `red_tolerance_per_min` 2 per
+  movement.
+- **Python copy.** `flowguard_sim.evidence_replay` is a line-by-line copy of
+  E1-E5 for offline calibration on logged runs (the core exposes no
+  evidence). `tests/fixtures/evidence_replay.json` (a 240 s maxpressure run
+  of `config/faults/evidence_fixture.json`, with quality reports and red
+  runners added and shorter windows) holds the inputs and the scores; the
+  Rust test `matches_the_python_replay_fixture` and
+  `tests/test_evidence_replay.py` both require them, so the two cannot
+  drift. Rebuild with `python -m flowguard_sim.evidence_replay --fixture`.
+- **Calibration, exploratory, not results to quote.** 3600 s runs, fixed and
+  maxpressure, seeds 1 and 2 (seed-2 demand generated locally, not
+  committed), each clean and with three scenarios: `mixed`; faults on the
+  links between junctions (undercount and dropout upstream, freeze,
+  blackout, undercount 0.5, displaced 40 m); freeze on entries, blackout on
+  two links, undercount 0.7, displaced 20 m. Thresholds were set before the
+  runs; seed 1 showed the two structural problems above (stall cap, silent
+  re-sync); seed 2 was held out. Seconds with score 1, seed 1 / seed 2.
+  Clean runs: E3 0 / 0 of 27,400 scored; E4 red 0 / 0; E4 stall never
+  above 0.5 by design (300 / 51 s at 0.5, gridlock); E2 0 / 6 (seed 2,
+  t = 90-95 s: first vehicles sent toward an empty link not arrived yet, a
+  start-up transient of D24's 60 s supply window). Fault runs away from
+  faults: E3 0 / 47, all 121-163 s after a fault on that link, whose
+  corrections the window still holds. Share of fault seconds with score
+  >= 0.5, seed 1 / seed 2: E3 blackout 67 / 75 %, undercount 57 / 45 %
+  (keep 0.5 far higher than 0.7), freeze 63 / 94 %, displaced 5 / 15 %; E3
+  on the approach downstream of a faulty feeder, undercount 30 / 58 %,
+  freeze 23 / 55 %; E4 red departures, a freeze repeating its departures
+  through red, 0 / 24 %; E4 stall (at 0.5), freeze 68 / 45 %.
+- **Limits.** E3 compares two cameras and cannot say which is wrong: its
+  evidence lands on the downstream approach, so G2 must weigh the feeders'
+  own evidence. It is silent while a queue holds the link (except overfill)
+  and unavailable for about 3 minutes after any missing measurement on the
+  link or a feeder, so a feeder with frequent dropouts disables it (no
+  balance, no evidence). It sees counts, not timing: a steady stream
+  arriving late looks like one on time. Driveways, parking and other
+  mid-link sources and sinks are not modelled; the simulator has none. E4
+  cannot tell gridlock or an incident from a camera that misses departures,
+  hence the cap.

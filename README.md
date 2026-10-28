@@ -95,6 +95,14 @@ A fault run also writes `faults.jsonl`: the active fault kind (or null) per
 approach per second, the ground truth for scoring the Guard. Without
 `--faults` nothing changes.
 
+The Guard's evidence checks (docs/decisions.md D24, D25) are not in the run
+logs yet; a Python copy replays them over a run, per check and approach,
+against its `faults.jsonl`:
+
+```
+uv run python -m flowguard_sim.evidence_replay results/<run_id>
+```
+
 ## Checks
 
 ```
