@@ -369,6 +369,23 @@ def test_no_scenario_runs_are_unchanged(tmp_path: Path, monkeypatch: pytest.Monk
     assert all(r["fault"] is None for r in records(late_out / "faults.jsonl"))
 
 
+@pytest.mark.parametrize("controller", ["maxpressure_hyst_cap", "fixed_webster_wave"])
+def test_faults_work_under_every_controller_family(controller: str, tmp_path: Path) -> None:
+    """The injector sits before the core, so the Module 3 controllers (D20-D22)
+    get the same corrupted measurements: every kind applied and logged."""
+    summary = run(controller, 300, 1, results_dir=tmp_path, faults="smoke")
+    out = tmp_path / summary["run_id"]
+    assert (summary["controller"], summary["faults"]) == (controller, "smoke")
+    assert {r["fault"] for r in records(out / "faults.jsonl")} - {None} == {
+        "freeze", "blackout", "undercount", "dropout", "displaced"}
+    seen = keyed(out / "measurements.jsonl")
+    assert sum(a == "E_J3" for _, a in seen) < 300  # dropout
+    assert all(sum(seen[(float(t), "N2_J2")]["zone_counts"].values()) == 0 for t in range(60, 120))
+    frozen = [seen[(float(t), "J1_J2")] for t in range(59, 180)]
+    assert all({**m, "time": 0} == {**frozen[0], "time": 0} for m in frozen)
+    assert len(records(out / "commands.jsonl")) == 300 * 3
+
+
 def test_displaced_runs_are_deterministic(tmp_path: Path) -> None:
     a = run("maxpressure", 120, 1, results_dir=tmp_path / "a", faults="smoke")
     b = run("maxpressure", 120, 1, results_dir=tmp_path / "b", faults="smoke")
