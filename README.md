@@ -66,6 +66,11 @@ uv sync          # builds the Rust extension and installs every package
 ```
 uv run python -m flowguard_sim.run --controller fixed       --seconds 3600 --seed 1
 uv run python -m flowguard_sim.run --controller maxpressure --seconds 3600 --seed 1
+uv run python -m flowguard_sim.run --controller maxpressure_hyst --seconds 3600 --seed 1  # C1, config/maxpressure.json
+uv run python -m flowguard_sim.run --controller maxpressure_hyst_cap --seconds 3600 --seed 1  # + C3 spillback gate
+uv run python -m flowguard_sim.run --controller fixed_webster      --seconds 3600 --seed 1  # C5, config/webster.json
+uv run python -m flowguard_sim.run --controller fixed_webster_wave --seconds 3600 --seed 1  # C5 + green wave
+uv run python -m flowguard_sim.webster                                                   # print the Webster plan
 uv run python -m flowguard_sim.run --controller maxpressure --full-edge     # camera sees the whole approach
 uv run python -m flowguard_sim.compare results/<run_a>/summary.json results/<run_b>/summary.json
 ```

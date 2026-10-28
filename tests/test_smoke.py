@@ -20,7 +20,8 @@ def records(path: Path) -> list[dict[str, Any]]:
     return [json.loads(line) for line in path.read_text().splitlines()]
 
 
-@pytest.mark.parametrize("controller", ["fixed", "maxpressure"])
+@pytest.mark.parametrize("controller", ["fixed", "fixed_webster_wave", "maxpressure", "maxpressure_hyst",
+                                        "maxpressure_hyst_cap"])
 def test_300s_run(controller: str, tmp_path: Path) -> None:
     summary = run(controller, 300, 1, results_dir=tmp_path)
     out = tmp_path / summary["run_id"]

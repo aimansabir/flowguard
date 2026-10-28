@@ -27,7 +27,7 @@ impl Core {
         let ix = CorridorIndex::new(corridor)?;
         config.pcu.validate()?;
         config.timing.validate()?;
-        let controller = make_controller(&config.controller, &ix, config.timing.clearance_s())?;
+        let controller = make_controller(&config.controller, &ix, &config.timing)?;
         let guard: Box<dyn Guard> = match config.guard {
             GuardConfig::Passthrough => Box::new(PassThrough),
         };
@@ -138,7 +138,7 @@ mod tests {
 
     #[test]
     fn step_weighs_rates_and_commands() {
-        let mut core = Core::new(two_junctions(), config(ControllerConfig::MaxPressure)).unwrap();
+        let mut core = Core::new(two_junctions(), config(ControllerConfig::MaxPressure { hysteresis: None, capacity: None })).unwrap();
         let out = core.step(0.0, vec![measurement("a_w", "A", 4), measurement("a_n", "A", 1)]).unwrap();
         assert_eq!(out.states.len(), 2);
         let a_w = &out.states[0];
@@ -154,7 +154,7 @@ mod tests {
 
     #[test]
     fn rejects_bad_measurements() {
-        let mut core = Core::new(two_junctions(), config(ControllerConfig::MaxPressure)).unwrap();
+        let mut core = Core::new(two_junctions(), config(ControllerConfig::MaxPressure { hysteresis: None, capacity: None })).unwrap();
         assert!(matches!(core.step(0.0, vec![measurement("nope", "A", 0)]), Err(Error::Input(_))));
         assert!(matches!(core.step(0.0, vec![measurement("a_w", "B", 0)]), Err(Error::Input(_))));
         let dup = vec![measurement("a_w", "A", 0), measurement("a_w", "A", 0)];
@@ -168,10 +168,36 @@ mod tests {
     }
 
     #[test]
+    fn hysteresis_never_fights_min_green() {
+        let run = |hysteresis| {
+            let mut core = Core::new(two_junctions(), config(ControllerConfig::MaxPressure { hysteresis, capacity: None })).unwrap();
+            let mut x: u64 = 0x2545_F491_4F6C_DD1D;
+            for t in 0..600 {
+                let mut queue = || {
+                    x ^= x << 13;
+                    x ^= x >> 7;
+                    x ^= x << 17;
+                    (x % 12) as u32
+                };
+                let ms = vec![
+                    measurement("a_w", "A", queue()),
+                    measurement("a_n", "A", queue()),
+                    measurement("b_w", "B", queue()),
+                    measurement("b_n", "B", queue()),
+                ];
+                core.step(f64::from(t), ms).unwrap();
+            }
+            core.interventions().get(&Intervention::MinGreen).copied().unwrap_or(0)
+        };
+        assert!(run(None) > 0);
+        assert_eq!(run(Some(crate::contracts::Hysteresis { gain_pcu: 0.0 })), 0);
+    }
+
+    #[test]
     fn rejects_bad_config() {
-        let wrong_plan = config(ControllerConfig::Fixed { green_s: vec![40.0] });
+        let wrong_plan = config(ControllerConfig::Fixed { green_s: vec![40.0], offsets_s: None });
         assert!(matches!(Core::new(two_junctions(), wrong_plan), Err(Error::Config(_))));
-        let mut bad_pcu = config(ControllerConfig::MaxPressure);
+        let mut bad_pcu = config(ControllerConfig::MaxPressure { hysteresis: None, capacity: None });
         bad_pcu.pcu.bus = 0.0;
         assert!(Core::new(two_junctions(), bad_pcu).is_err());
     }

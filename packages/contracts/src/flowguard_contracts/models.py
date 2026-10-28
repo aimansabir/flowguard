@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, RootModel
 from typing_extensions import TypeAliasType
@@ -149,6 +149,8 @@ class SignalTiming(BaseModel):
 class FixedControllerConfig(BaseModel):
     """
     Fixed-time plan: green seconds per phase, same at every junction.
+    `offsets_s` shifts a junction's plan later by that many seconds
+    (green wave); junctions left out have offset 0 (D21).
     """
 
     model_config = ConfigDict(
@@ -156,17 +158,43 @@ class FixedControllerConfig(BaseModel):
     )
     kind: Literal["fixed"]
     green_s: list[float]
+    offsets_s: dict[str, Any] | None = None
 
 
-class MaxPressureControllerConfig(BaseModel):
+class Hysteresis(BaseModel):
     """
-    Basic max-pressure, re-decided every second.
+    Switching damper for max-pressure.
     """
 
     model_config = ConfigDict(
         extra="forbid",
     )
-    kind: Literal["maxpressure"]
+    gain_pcu: float
+    """
+    Switch only when the best phase beats the current one by more than
+    this, PCU. 0 = any strict gain.
+    """
+
+
+class Capacity(BaseModel):
+    """
+    Spillback protection for max-pressure (D22): an approach adds no
+    positive pressure while the approach it feeds is nearly full.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    jam_spacing_m: float
+    """
+    Road length one queued PCU takes, m. Storage of an approach =
+    length_m x lanes / jam_spacing_m, in PCU.
+    """
+    spillback_occupancy: float
+    """
+    Occupancy (queue / storage, 0-1) at or above which an approach is
+    treated as full.
+    """
 
 
 class PassthroughGuardConfig(BaseModel):
@@ -337,16 +365,19 @@ class Entry(BaseModel):
     """
 
 
-class CoreConfig(BaseModel):
+class MaxPressureControllerConfig(BaseModel):
+    """
+    Max-pressure, re-decided every second. Without `hysteresis` this is the
+    basic version (D12); with it, greens are held for min green and only
+    given up for a clear pressure gain (D20).
+    """
+
     model_config = ConfigDict(
         extra="forbid",
     )
-    pcu: PcuWeights
-    timing: SignalTiming
-    controller: FixedControllerConfig | MaxPressureControllerConfig
-    guard: Annotated[GuardConfig | None, Field(validate_default=True)] = {
-        "kind": "passthrough"
-    }
+    kind: Literal["maxpressure"]
+    hysteresis: Hysteresis | None = None
+    capacity: Capacity | None = None
 
 
 class StepOutput(BaseModel):
@@ -436,6 +467,18 @@ class Corridor(BaseModel):
     """
     entries: list[Entry]
     exits: list[Exit]
+
+
+class CoreConfig(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    pcu: PcuWeights
+    timing: SignalTiming
+    controller: FixedControllerConfig | MaxPressureControllerConfig
+    guard: Annotated[GuardConfig | None, Field(validate_default=True)] = {
+        "kind": "passthrough"
+    }
 
 
 class Contracts(BaseModel):
