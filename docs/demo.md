@@ -114,8 +114,9 @@ simulation, and the selected camera and junction carry over.
 - **Vision (Module 1)**: the selected camera's measurement this second
   (vehicles per class in the zone, stopped, arrivals, departures by
   movement, queue) and its image health. In SUMO runs the camera is
-  simulated and labelled so; there is no video, and the view shows the SUMO
-  camera zone instead. Video, YOLO boxes and track IDs appear only when the
+  simulated and labelled so; there is no video. The view is rendered from
+  SUMO (camera perspective or top-down) with boxes on the vehicles SUMO
+  places in the zone, and the counts the camera reported beside them. Video, YOLO boxes and track IDs appear only when the
   video pipeline supplies them.
 - **Guard (Module 2)**: trust per camera; for the selected one the camera
   value against the value the controller receives (with its margin), SUMO's

@@ -128,6 +128,23 @@ th:first-child,td:first-child{text-align:left}
 .tl{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:22px;align-items:center}
 .tl .legend{flex-direction:column;gap:7px}
 #runline{height:76px}
+/* vision, restyled */
+.vhead{display:flex;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap}.vhead b{font-size:16px}
+.vhead .r2{margin-left:auto;display:flex;gap:10px;align-items:center}
+#zone{height:420px;border-radius:10px;overflow:hidden;border:1px solid #1a2a33}
+.vrow{display:grid;grid-template-columns:1.35fr 1fr;gap:16px}
+.tiles4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.tiles4 .tile .v{font-size:26px}
+.qrow{display:grid;grid-template-columns:auto minmax(0,1fr);gap:18px;align-items:center}
+.qbig{font-size:36px;font-weight:700;line-height:1.1}.qbig small{font-size:14px;color:var(--dim);font-weight:500}
+#vspark{height:86px}
+.det{display:grid;grid-template-columns:34px minmax(0,1fr) 70px 70px;align-items:center;gap:6px;padding:7px 2px;border-bottom:1px solid #16223a;font-size:13.5px}
+.det svg{width:28px;height:16px;display:block}
+.det .n{text-align:right;font-weight:650;font-variant-numeric:tabular-nums}
+.det .n.diff{color:var(--warn)}
+.det.h{color:var(--mute);font-size:11.5px;border-bottom:1px solid var(--line);padding-top:0}
+.det.h span{text-align:right}
+.det.t{border-bottom:0;font-weight:650}
 /* guard */
 #p-guard{grid-template-columns:300px minmax(0,1fr) 340px;grid-template-rows:auto minmax(300px,1fr) auto;align-content:start}
 .cams{grid-row:1/4;display:flex;flex-direction:column}
@@ -198,7 +215,7 @@ code{font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;color:#cbd5
 .camrows div:hover{background:#14213a}.camrows div.sel{background:#15274a;border-color:#2b4a85}
 .camrows div span{color:var(--dim)}
 .vhead{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-#zone{height:340px}
+
 .classes{display:grid;grid-template-columns:1fr auto;gap:8px 12px;font-size:13.5px}
 .classes span:nth-child(even){text-align:right;font-weight:650}
 .sw{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:9px;vertical-align:-1px}
@@ -207,7 +224,7 @@ code{font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;color:#cbd5
 .tile .k{font-size:12px;color:var(--dim)}.tile .v{font-size:22px;font-weight:650}
 .health{display:grid;grid-template-columns:1fr auto;gap:8px;font-size:13px}
 .health span:nth-child(even){text-align:right}
-#vspark{height:120px}
+
 
 /* research */
 #p-research{grid-template-columns:repeat(5,minmax(0,1fr));align-content:start}
@@ -231,7 +248,7 @@ code{font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;color:#cbd5
  .jdetail{grid-column:auto}
  #p-overview{height:auto;grid-template-rows:420px auto auto}
  #p-guard{grid-template-columns:minmax(0,1fr)}#p-guard .cams{grid-row:auto}#p-guard .gright{grid-column:auto}
- .tiles{grid-template-columns:repeat(3,minmax(0,1fr))}
+ .tiles{grid-template-columns:repeat(3,minmax(0,1fr))}.vrow{grid-template-columns:minmax(0,1fr)}.tiles4{grid-template-columns:repeat(2,minmax(0,1fr))}
  .meta{display:none}
 }
 @media (max-width:700px){
@@ -296,16 +313,18 @@ code{font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;color:#cbd5
  <section class="page" id="p-vision">
   <div class="vleft">
    <div class="card">
-    <h3>Camera view<span class="r"><span id="vinj"></span><select class="btn" id="vsel" aria-label="Camera"></select></span></h3>
-    <div id="vfeed"></div>
+    <div class="vhead"><b id="vtitle">Camera</b><span class="dim">(simulated)</span><span id="vinj"></span>
+     <span class="r2"><span class="chip sim">SIMULATED CAMERA (SUMO)</span><span class="seg" id="vmode"><button data-m="cam" class="on">Camera view</button><button data-m="top">Top-down</button></span><select class="btn" id="vsel" aria-label="Camera"></select></span></div>
     <div class="cv" id="zone"><canvas id="zonec"></canvas></div>
-    <div class="note" style="margin-top:8px">Top-down view of the simulated camera zone from SUMO vehicle positions (the last 60 m before the stop line). This is not video footage.</div>
+    <div class="note" style="margin-top:8px">Rendered from SUMO vehicle positions, not video. Boxes mark the vehicles SUMO places in the 60 m camera zone (ground truth), not YOLO detections. Video, YOLO boxes and ByteTrack IDs appear only when Module 1's video pipeline supplies them.</div>
    </div>
-   <div class="card"><h3>Measurement summary<span class="r note">what this camera handed the core this second</span></h3><div class="tiles" id="vtiles"></div>
-    <h3 style="margin-top:14px;font-size:13px;color:var(--dim);font-weight:600">Measured queue, last 5 minutes</h3><div class="cv" id="vspark"><canvas id="vsparkc"></canvas></div></div>
+   <div class="vrow">
+    <div class="card"><h3>Camera zone statistics <span class="dim" style="font-weight:400">(last 60 m)</span><span class="r note">what the camera reported</span></h3><div class="tiles4" id="vtiles"></div></div>
+    <div class="card"><h3>Queue estimate <span class="dim" style="font-weight:400">(PCU)</span></h3><div class="qrow"><div><div class="qbig num" id="vq"></div><div class="note" id="vqs"></div></div><div class="cv" id="vspark"><canvas id="vsparkc"></canvas></div></div></div>
+   </div>
   </div>
   <div class="vright">
-   <div class="card"><h3>Detections this second <span class="r" id="vsrc"></span></h3><div class="classes" id="vclasses"></div></div>
+   <div class="card"><h3>Detections this second<span class="r" id="vsrc"></span></h3><div id="vclasses"></div></div>
    <div class="card"><h3>Camera health</h3><div class="health" id="vhealth"></div></div>
    <div class="card"><h3>All cameras<span class="r note">in zone · stopped</span></h3><div class="camrows" id="vgrid"></div></div>
   </div>
@@ -518,7 +537,7 @@ function drawScene(g,v,f,opt){
  const k=v.lw;
  if(f.veh)for(const [x,y,ang,cls,sp] of f.veh){const [X,Y]=v.px(x,y);if(X<-20||Y<-20||X>v.W+20||Y>v.H+20)continue;
   g.save();g.translate(X,Y);g.rotate(ang*Math.PI/180);
-  const w=Math.max(CWID[cls]*v.sc*k,3),h=Math.max(CLEN[cls]*v.sc*k,5.5);
+  const w=Math.max(CWID[cls]*v.sc*k,3),h=Math.max(CLEN[cls]*v.sc*k,5.5);g.translate(0,h/2);
   g.fillStyle="rgba(0,0,0,.35)";rr(g,-w/2+.8,-h/2+1,w,h,Math.min(w,h)*.35);g.fill();
   g.fillStyle=CC[cls];rr(g,-w/2,-h/2,w,h,Math.min(w,h)*.35);g.fill();
   if(cls!==1&&h>6.5){g.fillStyle="rgba(10,16,28,.55)";g.fillRect(-w/2+w*.16,-h/2+h*.17,w*.68,h*.15)}
@@ -663,39 +682,114 @@ $("runc").addEventListener("click",e=>{if(!S.runX)return;const b=$("runc").getBo
  const t=x0+(e.clientX-b.left-l)/(W-l-r)*(x1-x0);if(t<0)return;seekTo(idxAt(t))});
 
 // ---------- vision ----------
+const VIC=[
+ '<svg viewBox="0 0 28 16"><path d="M2 12V9l4-5h11l6 5h3v3z" fill="currentColor"/><path d="M8 5h4v4H6zM14 5h3l3 4h-6z" fill="#0b1424" opacity=".55"/><circle cx="8" cy="12.5" r="2.4" fill="#0b1424" stroke="currentColor" stroke-width="1.4"/><circle cx="20" cy="12.5" r="2.4" fill="#0b1424" stroke="currentColor" stroke-width="1.4"/></svg>',
+ '<svg viewBox="0 0 28 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="6" cy="11" r="3.4"/><circle cx="22" cy="11" r="3.4"/><path d="M6 11l5-5h6l5 5M17 6l-1.5-3h3"/></svg>',
+ '<svg viewBox="0 0 28 16"><path d="M5 12V6q0-3 4-3h7l5 5h3v4z" fill="currentColor"/><path d="M10 5h5v3h-5z" fill="#0b1424" opacity=".55"/><circle cx="9" cy="12.5" r="2.4" fill="#0b1424" stroke="currentColor" stroke-width="1.4"/><circle cx="21" cy="12.5" r="2.4" fill="#0b1424" stroke="currentColor" stroke-width="1.4"/></svg>',
+ '<svg viewBox="0 0 28 16"><path d="M2 4h12v7H2z" fill="currentColor"/><path d="M14 9h5l3-4h2" stroke="currentColor" stroke-width="1.8" fill="none"/><circle cx="5" cy="12.5" r="2.4" fill="#0b1424" stroke="currentColor" stroke-width="1.4"/><circle cx="22" cy="12" r="2.8" fill="#0b1424" stroke="currentColor" stroke-width="1.4"/></svg>',
+ '<svg viewBox="0 0 28 16"><rect x="1" y="2" width="26" height="10" rx="2" fill="currentColor"/><path d="M4 4.5h4v3H4zM10 4.5h4v3h-4zM16 4.5h4v3h-4zM22 4.5h3v3h-3z" fill="#0b1424" opacity=".55"/><circle cx="7" cy="12.5" r="2.4" fill="#0b1424" stroke="currentColor" stroke-width="1.4"/><circle cx="21" cy="12.5" r="2.4" fill="#0b1424" stroke="currentColor" stroke-width="1.4"/></svg>',
+ '<svg viewBox="0 0 28 16"><path d="M1 2h16v10H1zM17 5h6l4 4v3H17z" fill="currentColor"/><path d="M19 6h3l2.5 3H19z" fill="#0b1424" opacity=".55"/><circle cx="6" cy="12.5" r="2.4" fill="#0b1424" stroke="currentColor" stroke-width="1.4"/><circle cx="21" cy="12.5" r="2.4" fill="#0b1424" stroke="currentColor" stroke-width="1.4"/></svg>'];
+const VH=[1.5,1.4,1.8,1.7,3.2,3.4];
+function shade(hex,k){const n=parseInt(hex.slice(1),16);return `rgb(${(n>>16&255)*k|0},${(n>>8&255)*k|0},${(n&255)*k|0})`}
+function hull(pts){const p=pts.slice().sort((a,b)=>a[0]-b[0]||a[1]-b[1]),cr=(o,a,b)=>(a[0]-o[0])*(b[1]-o[1])-(a[1]-o[1])*(b[0]-o[0]),lo=[],up=[];
+ for(const q of p){while(lo.length>1&&cr(lo[lo.length-2],lo[lo.length-1],q)<=0)lo.pop();lo.push(q)}
+ for(const q of p.reverse()){while(up.length>1&&cr(up[up.length-2],up[up.length-1],q)<=0)up.pop();up.push(q)}
+ return lo.slice(0,-1).concat(up.slice(0,-1))}
+function sampleLine(p,step){const out=[p[0]];for(let i=1;i<p.length;i++){const a=p[i-1],b=p[i],n=Math.max(1,Math.ceil(Math.hypot(b[0]-a[0],b[1]-a[1])/step));
+ for(let k=1;k<=n;k++)out.push([a[0]+(b[0]-a[0])*k/n,a[1]+(b[1]-a[1])*k/n])}return out}
+// A pinhole camera at the stop line, raised and looking up the approach. Everything drawn comes
+// from the SUMO network and vehicle positions; boxes are SUMO ground truth, not detections.
+function drawCamera(g,W,H,f,a){
+ const e0=edge(a);if(!e0)return null;
+ const ends=e0.lanes.map(l=>l[l.length-1]),O=[sum(ends.map(p=>p[0]))/ends.length,sum(ends.map(p=>p[1]))/ends.length];
+ const L0=e0.lanes[0],p0=L0[0],p1=L0[L0.length-1],nn=Math.hypot(p0[0]-p1[0],p0[1]-p1[1])||1,U=[(p0[0]-p1[0])/nn,(p0[1]-p1[1])/nn],R=[U[1],-U[0]];
+ const half=e0.lanes.length*e0.width/2,hz=H*.2,CU=-12,HC=5,fo=(H-hz-22)*(-CU)/HC;
+ const loc=p=>{const dx=p[0]-O[0],dy=p[1]-O[1];return [dx*U[0]+dy*U[1],dx*R[0]+dy*R[1]]};
+ const P=(u,w,z=0)=>{const d=u-CU;return d<1?null:[W/2+fo*w/d,hz+fo*(HC-z)/d,d]};
+ let gr=g.createLinearGradient(0,0,0,hz);gr.addColorStop(0,"#050a13");gr.addColorStop(1,"#1b2c44");g.fillStyle=gr;g.fillRect(0,0,W,hz+1);
+ gr=g.createLinearGradient(0,hz,0,H);gr.addColorStop(0,"#1a2c33");gr.addColorStop(1,"#0e1a1f");g.fillStyle=gr;g.fillRect(0,hz,W,H-hz);
+ const quad=(q,fill)=>{const x=q.map(r=>P(r[0],r[1],r[2]||0));if(x.some(v=>!v||v[2]>260))return;
+  g.beginPath();x.forEach((v,i)=>i?g.lineTo(v[0],v[1]):g.moveTo(v[0],v[1]));g.closePath();g.fillStyle=fill;g.fill();g.strokeStyle=fill;g.lineWidth=.8;g.stroke()};
+ const band=(pts,hw,fill,dash)=>{for(let i=1;i<pts.length;i++){if(dash&&i%2)continue;const A=pts[i-1],B=pts[i],du=B[0]-A[0],dw=B[1]-A[1],n=Math.hypot(du,dw)||1,nu=-dw/n*hw,nw=du/n*hw;
+  quad([[A[0]+nu,A[1]+nw],[B[0]+nu,B[1]+nw],[B[0]-nu,B[1]-nw],[A[0]-nu,A[1]-nw]],fill)}};
+ const line=(poly,step)=>sampleLine(poly,step).map(loc),E=S.L.net.edges;
+ for(const e of E)if(!e.internal)for(const l of e.lanes)band(line(l,4),e.width/2+2.4,"#2c3845");
+ for(const e of E)for(const l of e.lanes)band(line(l,4),e.width/2,"#222a34");
+ const st=f.app[a]||{};for(const l of e0.lanes)band(line(tail(l,60).reverse(),3),e0.width/2,zoneColor(st));
+ for(const e of E){if(e.internal)continue;for(let i=1;i<e.lanes.length;i++){const A=e.lanes[i-1],B=e.lanes[i];if(A.length!==B.length)continue;
+  band(line(A.map((q,k)=>[(q[0]+B[k][0])/2,(q[1]+B[k][1])/2]),3),.08,"rgba(226,232,240,.55)",true)}}
+ const done=new Set();
+ for(const e of E){if(e.internal)continue;const r=revId(e.id),b=r&&E.find(x=>x.id===r);if(!b||done.has(b.id))continue;done.add(e.id);
+  let best=null,bd=1e9;for(const la of e.lanes)for(const lb of b.lanes){const d=Math.hypot(la[0][0]-lb[lb.length-1][0],la[0][1]-lb[lb.length-1][1]);if(d<bd){bd=d;best=[la,lb]}}
+  const [la,lb]=best,a0=la[0],a1=la[la.length-1],b0=lb[lb.length-1],b1=lb[0];
+  band(line([[(a0[0]+b0[0])/2,(a0[1]+b0[1])/2],[(a1[0]+b1[0])/2,(a1[1]+b1[1])/2]],3),.12,"rgba(234,179,8,.8)")}
+ quad([[-.25,-half],[.25,-half],[.25,half],[-.25,half]],"rgba(241,245,249,.85)");
+ // distance marks along the zone
+ g.font="600 11px Segoe UI,system-ui";g.textAlign="center";
+ for(const k of [10,20,30,40,50,60]){quad([[k-.08,-half],[k+.08,-half],[k+.08,half],[k-.08,half]],"rgba(226,232,240,.16)");
+  const t=P(k,-(half+3.6));if(t){g.fillStyle="rgba(203,213,225,.75)";g.fillText(k+" m",t[0],t[1]+4)}}
+ g.textAlign="start";
+ // vehicles, far to near
+ const list=[];
+ if(f.veh)for(const [x,y,ang,cls,sp] of f.veh){const th=ang*Math.PI/180,hd=[Math.sin(th),Math.cos(th)],sd=[Math.cos(th),-Math.sin(th)],len=CLEN[cls],wid=CWID[cls];
+  const c=[x-hd[0]*len/2,y-hd[1]*len/2],cl=loc(c);if(cl[0]-CU<2||cl[0]-CU>230||Math.abs(cl[1])>70)continue;
+  const cs=[[1,1],[1,-1],[-1,-1],[-1,1]].map(([m,n])=>loc([c[0]+hd[0]*len/2*m+sd[0]*wid/2*n,c[1]+hd[1]*len/2*m+sd[1]*wid/2*n]));
+  list.push({cls,sp,cl,cs,zone:cl[0]>=0&&cl[0]<=60&&Math.abs(cl[1])<=half+.2})}
+ list.sort((p,q)=>q.cl[0]-p.cl[0]);
+ const counts=[0,0,0,0,0,0];
+ for(const v of list){const bot=v.cs.map(q=>P(q[0],q[1],0)),top=v.cs.map(q=>P(q[0],q[1],VH[v.cls]));if(bot.some(x=>!x)||top.some(x=>!x))continue;
+  const fog=Math.max(.35,Math.min(1,1-(v.cl[0]-CU-90)/140));g.globalAlpha=fog;
+  const hl=hull(bot.concat(top));g.beginPath();hl.forEach((q,i)=>i?g.lineTo(q[0],q[1]):g.moveTo(q[0],q[1]));g.closePath();g.fillStyle=shade(CC[v.cls],.5);g.fill();
+  g.beginPath();top.forEach((q,i)=>i?g.lineTo(q[0],q[1]):g.moveTo(q[0],q[1]));g.closePath();g.fillStyle=CC[v.cls];g.fill();
+  if(v.sp<.1){const r=Math.max(1.2,4/Math.max(1,v.cl[0]-CU)*6);g.fillStyle="#ff4545";for(const q of bot.slice(2))g.fillRect(q[0]-r,q[1]-r*2.2,r*2,r*1.4)}
+  g.globalAlpha=1;
+  if(!v.zone)continue;counts[v.cls]++;
+  const xs=bot.concat(top).map(q=>q[0]),ys=bot.concat(top).map(q=>q[1]),x0=Math.min(...xs)-3,x1=Math.max(...xs)+3,y0=Math.min(...ys)-3,y1=Math.max(...ys)+3;
+  g.strokeStyle=CC[v.cls];g.lineWidth=1.8;g.strokeRect(x0,y0,x1-x0,y1-y0);
+  if(y1-y0>24){const lb=CLS[v.cls]+(v.sp<.1?" · stopped":"");g.font="700 10.5px Segoe UI,system-ui";const tw=g.measureText(lb).width+8;
+   g.fillStyle=CC[v.cls];g.fillRect(x0-1,y0-15,tw,15);g.fillStyle="#08101c";g.fillText(lb,x0+3,y0-4)}}
+ // frame overlays
+ const F="Segoe UI,system-ui";g.font=`700 12px ${F}`;
+ g.fillStyle="rgba(5,10,19,.72)";rr(g,12,12,250,26,7);g.fill();g.fillStyle="#ef4444";g.beginPath();g.arc(26,25,4.5,0,7);g.fill();
+ g.fillStyle="#e7eef8";g.fillText(`CAM ${a} · simulated`,38,29);
+ const ts=`t = ${Math.round(f.t)} s`;const tw=g.measureText(ts).width+20;g.fillStyle="rgba(5,10,19,.72)";rr(g,W-tw-12,12,tw,26,7);g.fill();g.fillStyle="#e7eef8";g.fillText(ts,W-tw-2,29);
+ g.font=`11px ${F}`;g.fillStyle="rgba(5,10,19,.72)";const nt="Rendered from SUMO · boxes = ground truth in the camera zone, not YOLO";const nw=g.measureText(nt).width+16;rr(g,12,H-34,nw,22,6);g.fill();g.fillStyle="#cbd5e1";g.fillText(nt,20,H-19);
+ if(st.miss){g.fillStyle="rgba(5,10,19,.62)";g.fillRect(0,0,W,H);g.textAlign="center";g.font=`800 30px ${F}`;g.fillStyle="#e7eef8";g.fillText("NO SIGNAL",W/2,H/2);
+  g.font=`13px ${F}`;g.fillStyle="#cbd5e1";g.fillText("no measurement arrived from this camera this second",W/2,H/2+24);g.textAlign="start"}
+ if(st.f){const t=`INJECTED FAULT: ${st.f.toUpperCase()}  ·  the camera's output is affected; this view shows SUMO's real traffic`;g.font=`700 12px ${F}`;const w=g.measureText(t).width+24;
+  g.fillStyle="rgba(80,12,44,.9)";rr(g,W/2-w/2,48,w,28,8);g.fill();g.strokeStyle="#ec4899";g.lineWidth=1.2;g.stroke();g.fillStyle="#fbcfe8";g.fillText(t,W/2-w/2+12,66)}
+ return counts}
 function vision(){
  const f=cur(),a=S.selA,s=f.app[a]||{},c=s.cam;$("vsel").value=a;
+ $("vtitle").textContent=`Camera: ${a}`;
+ $("vinj").innerHTML=s.f?`<span class="chip inj" title="experiment ground truth">INJECTED: ${esc(s.f).toUpperCase()}</span>`:"";
+ const [g,W,H]=fit($("zonec"));let seen=null;
+ if(S.vmode!=="top")seen=drawCamera(g,W,H,f,a);
+ else{const e=edge(a),z=tail(e.lanes[0],60),m=z[Math.floor(z.length/2)];drawScene(g,view(W,H,m[0],m[1],Math.min(W/140,H/75)),f,{sel:a});
+  if(!f.veh){g.font="12.5px Segoe UI,system-ui";g.fillStyle="#97a6bc";g.fillText("Replay: vehicle positions were not recorded.",16,H-14)}}
+ if(!f.veh)seen=null;
  const src=c?c.src:null;
  $("vsrc").innerHTML=src==="sim"?'<span class="chip sim">SIMULATED</span>':src?`<span class="chip acc">${esc(src).toUpperCase()}</span>`:'<span class="chip bad">NO DATA</span>';
- $("vfeed").innerHTML=`<div class="banner" style="margin-bottom:12px;background:rgba(148,163,184,.06);border-color:var(--line2);color:var(--dim)">
-  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#97a6bc" stroke-width="1.7"><path d="M3 8a2 2 0 0 1 2-2h2l2-2h6l2 2h2a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M4 4l16 16"/></svg>
-  <span><b style="color:var(--txt)">Video feed unavailable for this run.</b> ${src==="sim"?"Measurements come from a simulated camera in SUMO.":src?"":"No measurement arrived this second."} Video frames, YOLO boxes and ByteTrack IDs appear only when Module 1's video pipeline supplies them; it is not connected to the live simulation.</span></div>`;
- // zone view
- const zc=$("zonec"),[g,W,H]=fit(zc),e=edge(a);
- if(e){const l=e.lanes[0],z=tail(l,60),m=z[Math.floor(z.length/2)];const v=view(W,H,m[0],m[1],Math.min(W/140,H/75));drawScene(g,v,f,{sel:a});
-  if(!f.veh){g.font="12.5px Segoe UI,system-ui";g.fillStyle="#97a6bc";g.fillText("Replay: vehicle positions were not recorded.",16,H-14)}
-  g.fillStyle="rgba(11,20,36,.85)";rr(g,12,12,230,28,8);g.fill();g.fillStyle="#cbd5e1";g.font="600 12px Segoe UI,system-ui";g.fillText(`${a} · camera zone (last 60 m)`,22,30)}
- // classes
- const zcnt=c&&c.zc?c.zc:null;
- $("vclasses").innerHTML=CLS.map((k,i)=>`<span><i class="sw" style="background:${CC[i]}"></i>${k[0].toUpperCase()+k.slice(1)}</span><span class="num">${zcnt?zcnt[i]:"–"}</span>`).join("")+
-  `<span class="dim" style="grid-column:1/3;font-size:12px;margin-top:4px">Vehicles of each class in the zone. ${src==="sim"?"Simulated: counted from SUMO, not detected.":""}</span>`;
- // tiles
- const T=[["In zone",c?c.z:"–"],["Stopped",c?c.qv:"–"],["Arrivals",c?c.a:"–"],["Departures",c?sum(c.d):"–"],["Left / straight / right",c?c.d.join(" / "):"–"],["Queue (PCU)",c&&!s.miss&&s.q!=null?pcu(s.q):"–"]];
+ const zc=c&&c.zc?c.zc:null;
+ $("vclasses").innerHTML=`<div class="det h"><span></span><span style="text-align:left">Class</span><span>Camera</span><span>${seen?"In view":""}</span></div>`+
+  CLS.map((k,i)=>{const r=zc?zc[i]:null,v=seen?seen[i]:null;return `<div class="det"><span style="color:${CC[i]}">${VIC[i]}</span><span>${k[0].toUpperCase()+k.slice(1)}</span><span class="n ${r!=null&&v!=null&&r!==v?"diff":""}">${r==null?"–":r}</span><span class="n dim">${v==null?"":v}</span></div>`}).join("")+
+  `<div class="det t"><span></span><span>Total</span><span class="n">${zc?sum(zc):"–"}</span><span class="n dim">${seen?sum(seen):""}</span></div>
+  <div class="note" style="margin-top:8px">Camera = what the simulated camera reported to the core. ${seen?"In view = vehicles SUMO places in the zone now (ground truth). They differ when a fault is injected, or by a vehicle at the zone edge.":""}</div>`;
+ const T=[["In zone",c?c.z:"–"],["Stopped",c?c.qv:"–"],["Arrived",c?c.a:"–"],["Left (L/S/R)",c?c.d.join(" / "):"–"]];
  $("vtiles").innerHTML=T.map(([k,v])=>`<div class="tile"><div class="k">${k}</div><div class="v num">${v}</div></div>`).join("");
- // health
+ $("vq").innerHTML=c&&!s.miss&&s.q!=null?`${pcu(s.q)} <small>PCU</small>`:"–";
+ $("vqs").innerHTML=s.est!=null?`measured by the camera · controller receives <b style="color:${s.ov?"#c4b5fd":"var(--use)"}">${pcu(s.est)} ± ${pcu(s.m)}</b>${s.ov?" (virtual)":""}`:"measured by the camera";
  const h=c&&c.h,img=h&&h.img,nr='<span class="mute">not reported</span>';
  $("vhealth").innerHTML=[["Frozen frame",img?(img.frozen?'<span style="color:var(--badt)">frozen</span>':"no"):nr],["Blur",img?img.blur.toFixed(2):nr],["Brightness",img?img.brightness.toFixed(2):nr],
   ["Displacement",img?img.displacement_px.toFixed(1)+" px":nr],["Detector confidence",h&&h.conf!=null?h.conf.toFixed(2):nr]].map(([k,v])=>`<span>${k}</span><span>${v}</span>`).join("")+
-  (img||(h&&h.conf!=null)?"":`<span class="note" style="grid-column:1/3;margin-top:4px">Image health is produced only by the video pipeline (V4/V5). The simulated camera has no image, so E1 has nothing to judge.</span>`);
- // spark
+  (img||(h&&h.conf!=null)?"":`<span class="note" style="grid-column:1/3;margin-top:4px">Image health (V4/V5) is only available with real video input; the simulated camera has no image.</span>`);
  const sc=$("vsparkc"),[sg,SW,SH]=fit(sc);const t1=f.t,t0=Math.max(0,t1-300);
- lineChart(sg,SW,SH,{x0:t0,x1:Math.max(t0+300,t1),series:[{k:"q",color:"#60a5fa",w:1.8}],a,bands:[],marks:[],compact:true});
- // grid
+ lineChart(sg,SW,SH,{x0:t0,x1:Math.max(t0+300,t1),series:[{k:"q",color:"#60a5fa",w:1.8,skipMiss:true}],a,bands:[],marks:[],compact:true});
  $("vgrid").innerHTML=IDS.map(x=>{const s=f.app[x]||{},c=s.cam;return `<div class="${x===a?"sel":""}" data-a="${x}"><b>${x}</b>${c?`<span class="num">${c.z} · ${c.qv}</span>`:'<span style="color:var(--badt)">no data</span>'}</div>`}).join("");
- $("vinj").innerHTML=s.f?`<span class="chip inj" title="experiment ground truth; the counts below are what the faulty camera reported">INJECTED: ${esc(s.f).toUpperCase()}</span>`:"";
 }
 $("vsel").onchange=e=>{selectA(e.target.value);schedule()};
 $("vgrid").addEventListener("click",e=>{const d=e.target.closest("[data-a]");if(d){selectA(d.dataset.a);schedule()}});
+$("vmode").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;S.vmode=b.dataset.m;[...$("vmode").children].forEach(x=>x.classList.toggle("on",x===b));schedule()});
 
 // ---------- charts ----------
 function lineChart(g,W,H,o){

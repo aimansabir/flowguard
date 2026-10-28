@@ -814,7 +814,11 @@ Rules the page follows:
   provides them; a check over a 900 s run found them equal to the core's
   commands in every approach-second.
 - The Vision view shows a camera image only if the video pipeline supplies
-  one; with the simulated camera it says so and shows the SUMO zone instead.
+  one. With the simulated camera it renders a camera-style perspective of
+  the approach from SUMO's network and vehicle positions, labelled as such:
+  its boxes are the vehicles SUMO places in the 60 m zone (ground truth),
+  never presented as YOLO detections, and the panel beside it puts the
+  camera's reported counts next to them, so an injected fault is visible.
 
 Research view: `GET /api/results` lists the run folders under `--results`
 (default `results/`), reading `summary.json`, and scores runs that have a
