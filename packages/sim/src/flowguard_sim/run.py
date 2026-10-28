@@ -30,6 +30,7 @@ from pydantic import BaseModel
 from flowguard_contracts import ClassCounts, CoreConfig, StepOutput
 from flowguard_core import Core
 from flowguard_sim import webster
+from flowguard_sim.conflicts import read_conflicts
 from flowguard_sim.corridor import load_corridor
 from flowguard_sim.demand import ensure_demand
 from flowguard_sim.faults import FaultInjector, load_scenario
@@ -119,7 +120,7 @@ def run(controller: str, seconds: int, seed: int, results_dir: Path = ROOT / "re
         "--no-step-log", "true",
     ])
     observer = SimObserver(corridor, zone, shifted=injector.shifts())
-    signals = SignalApplier(corridor)
+    signals = SignalApplier(corridor, read_conflicts(ROOT / sim_cfg["net_file"], [j.id for j in corridor.junctions]))
     departed = teleports = collisions = 0
 
     with ExitStack() as stack:

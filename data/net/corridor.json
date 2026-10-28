@@ -15,36 +15,8 @@
       ],
       "links": [
         {
-          "approach": "N1_J1",
-          "direction": "r"
-        },
-        {
-          "approach": "N1_J1",
-          "direction": "s"
-        },
-        {
-          "approach": "N1_J1",
-          "direction": "l"
-        },
-        {
-          "approach": "J2_J1",
-          "direction": "r"
-        },
-        {
-          "approach": "J2_J1",
-          "direction": "s"
-        },
-        {
-          "approach": "J2_J1",
-          "direction": "s"
-        },
-        {
-          "approach": "J2_J1",
-          "direction": "l"
-        },
-        {
           "approach": "S1_J1",
-          "direction": "r"
+          "direction": "l"
         },
         {
           "approach": "S1_J1",
@@ -52,23 +24,51 @@
         },
         {
           "approach": "S1_J1",
+          "direction": "r"
+        },
+        {
+          "approach": "J2_J1",
           "direction": "l"
         },
         {
-          "approach": "W_J1",
+          "approach": "J2_J1",
+          "direction": "s"
+        },
+        {
+          "approach": "J2_J1",
+          "direction": "s"
+        },
+        {
+          "approach": "J2_J1",
+          "direction": "r"
+        },
+        {
+          "approach": "N1_J1",
+          "direction": "l"
+        },
+        {
+          "approach": "N1_J1",
+          "direction": "s"
+        },
+        {
+          "approach": "N1_J1",
           "direction": "r"
         },
         {
           "approach": "W_J1",
-          "direction": "s"
-        },
-        {
-          "approach": "W_J1",
-          "direction": "s"
-        },
-        {
-          "approach": "W_J1",
           "direction": "l"
+        },
+        {
+          "approach": "W_J1",
+          "direction": "s"
+        },
+        {
+          "approach": "W_J1",
+          "direction": "s"
+        },
+        {
+          "approach": "W_J1",
+          "direction": "r"
         }
       ]
     },
@@ -86,36 +86,8 @@
       ],
       "links": [
         {
-          "approach": "N2_J2",
-          "direction": "r"
-        },
-        {
-          "approach": "N2_J2",
-          "direction": "s"
-        },
-        {
-          "approach": "N2_J2",
-          "direction": "l"
-        },
-        {
-          "approach": "J3_J2",
-          "direction": "r"
-        },
-        {
-          "approach": "J3_J2",
-          "direction": "s"
-        },
-        {
-          "approach": "J3_J2",
-          "direction": "s"
-        },
-        {
-          "approach": "J3_J2",
-          "direction": "l"
-        },
-        {
           "approach": "S2_J2",
-          "direction": "r"
+          "direction": "l"
         },
         {
           "approach": "S2_J2",
@@ -123,23 +95,51 @@
         },
         {
           "approach": "S2_J2",
+          "direction": "r"
+        },
+        {
+          "approach": "J3_J2",
           "direction": "l"
         },
         {
-          "approach": "J1_J2",
+          "approach": "J3_J2",
+          "direction": "s"
+        },
+        {
+          "approach": "J3_J2",
+          "direction": "s"
+        },
+        {
+          "approach": "J3_J2",
+          "direction": "r"
+        },
+        {
+          "approach": "N2_J2",
+          "direction": "l"
+        },
+        {
+          "approach": "N2_J2",
+          "direction": "s"
+        },
+        {
+          "approach": "N2_J2",
           "direction": "r"
         },
         {
           "approach": "J1_J2",
-          "direction": "s"
-        },
-        {
-          "approach": "J1_J2",
-          "direction": "s"
-        },
-        {
-          "approach": "J1_J2",
           "direction": "l"
+        },
+        {
+          "approach": "J1_J2",
+          "direction": "s"
+        },
+        {
+          "approach": "J1_J2",
+          "direction": "s"
+        },
+        {
+          "approach": "J1_J2",
+          "direction": "r"
         }
       ]
     },
@@ -157,36 +157,8 @@
       ],
       "links": [
         {
-          "approach": "N3_J3",
-          "direction": "r"
-        },
-        {
-          "approach": "N3_J3",
-          "direction": "s"
-        },
-        {
-          "approach": "N3_J3",
-          "direction": "l"
-        },
-        {
-          "approach": "E_J3",
-          "direction": "r"
-        },
-        {
-          "approach": "E_J3",
-          "direction": "s"
-        },
-        {
-          "approach": "E_J3",
-          "direction": "s"
-        },
-        {
-          "approach": "E_J3",
-          "direction": "l"
-        },
-        {
           "approach": "S3_J3",
-          "direction": "r"
+          "direction": "l"
         },
         {
           "approach": "S3_J3",
@@ -194,23 +166,51 @@
         },
         {
           "approach": "S3_J3",
+          "direction": "r"
+        },
+        {
+          "approach": "E_J3",
           "direction": "l"
         },
         {
-          "approach": "J2_J3",
+          "approach": "E_J3",
+          "direction": "s"
+        },
+        {
+          "approach": "E_J3",
+          "direction": "s"
+        },
+        {
+          "approach": "E_J3",
+          "direction": "r"
+        },
+        {
+          "approach": "N3_J3",
+          "direction": "l"
+        },
+        {
+          "approach": "N3_J3",
+          "direction": "s"
+        },
+        {
+          "approach": "N3_J3",
           "direction": "r"
         },
         {
           "approach": "J2_J3",
-          "direction": "s"
-        },
-        {
-          "approach": "J2_J3",
-          "direction": "s"
-        },
-        {
-          "approach": "J2_J3",
           "direction": "l"
+        },
+        {
+          "approach": "J2_J3",
+          "direction": "s"
+        },
+        {
+          "approach": "J2_J3",
+          "direction": "s"
+        },
+        {
+          "approach": "J2_J3",
+          "direction": "r"
         }
       ]
     }

@@ -1,5 +1,6 @@
 {
-  "_note": "Which network the runs use and how the simulated camera sees it. To switch to the OSM corridor, point the files at the new network.",
+  "_note": "Which network the runs use and how the simulated camera sees it. driving_side (left: Karachi) is applied by build_net. To switch to the OSM corridor, point the files at the new network.",
+  "driving_side": "left",
   "net_file": "data/net/corridor.net.xml",
   "corridor_file": "data/net/corridor.json",
   "vtypes_file": "data/net/vtypes.add.xml",

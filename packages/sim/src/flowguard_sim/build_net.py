@@ -7,7 +7,8 @@ back with sumolib and writes corridor.json (contract type `Corridor`): the
 junctions with their two phases and signal link order, every approach with
 its length, lanes and where each turn leads, and where traffic enters and
 leaves. For the real OSM corridor the phases have to be chosen by hand; this
-gives a starting point (decisions.md D6).
+gives a starting point (decisions.md D6). The driving side comes from
+config/sim.json (`driving_side`, D28): Karachi drives on the left.
 """
 # pyright: basic
 # sumolib ships without type information.
@@ -16,7 +17,7 @@ import subprocess
 from typing import Any
 
 from flowguard_contracts import Corridor
-from flowguard_sim.paths import ROOT
+from flowguard_sim.paths import ROOT, load_json
 from flowguard_sim.sumo_env import sumo_binary
 
 NET_DIR = ROOT / "data" / "net"
@@ -96,6 +97,9 @@ def build() -> None:
     import sumolib
 
     net_file = NET_DIR / "corridor.net.xml"
+    side = load_json("config/sim.json")["driving_side"]
+    if side not in ("left", "right"):
+        raise ValueError(f"driving_side must be left or right, not {side!r}")
     subprocess.run([
         sumo_binary("netconvert"),
         "--node-files", str(NET_DIR / "corridor.nod.xml"),
@@ -103,6 +107,7 @@ def build() -> None:
         "--output-file", str(net_file),
         "--no-turnarounds", "true",
         "--offset.disable-normalization", "true",
+        "--lefthand", "true" if side == "left" else "false",
     ], check=True)
 
     corridor = corridor_from_net(sumolib.net.readNet(str(net_file)))
