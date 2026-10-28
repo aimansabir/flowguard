@@ -24,7 +24,7 @@ from flowguard_sim.corridor import approaches_of
 
 HALT_SPEED = 0.1  # m/s, same threshold SUMO uses for "halting"
 CLASSES = ("car", "motorcycle", "rickshaw", "qingqi", "bus", "truck")
-SUBSCRIBED = [tc.VAR_TYPE, tc.VAR_ROAD_ID, tc.VAR_SPEED, tc.VAR_LANEPOSITION]
+SUBSCRIBED = [tc.VAR_TYPE, tc.VAR_ROAD_ID, tc.VAR_SPEED, tc.VAR_LANEPOSITION, tc.VAR_POSITION, tc.VAR_ANGLE]
 
 
 def _zeros() -> dict[str, int]:
