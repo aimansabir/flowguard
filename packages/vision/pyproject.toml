@@ -3,7 +3,7 @@ name = "flowguard-vision"
 version = "0.2.0"
 description = "Camera -> Measurement pipeline for FlowGuard. Depends on the contracts only."
 requires-python = ">=3.12"
-dependencies = ["flowguard-contracts"]
+dependencies = ["flowguard-contracts", "numpy>=2"]
 
 [tool.uv.sources]
 flowguard-contracts = { workspace = true }
