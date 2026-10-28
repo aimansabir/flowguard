@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<title>FlowGuard vision dashboard</title>
+<style>
+:root{--bg:#0f1318;--panel:#171d25;--line:#2a3340;--txt:#dbe3ee;--dim:#8493a6;--cam:#4da3ff;--tru:#9aa7b8;--arr:#4da3ff;--dep:#ffb454;--bad:#ff6b6b;--ok:#52d273}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--txt);font:13px/1.4 system-ui,Segoe UI,sans-serif}
+header{display:flex;gap:16px;align-items:center;padding:10px 18px;border-bottom:1px solid var(--line)}
+header h1{font-size:15px;margin:0;font-weight:600}header .sub{color:var(--dim)}
+.wrap{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:14px;padding:14px 18px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px}
+.panel h2{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);margin:0 0 8px;font-weight:600}
+canvas{width:100%;display:block}
+.controls{display:flex;gap:10px;align-items:center;margin-top:8px}
+.controls input[type=range]{flex:1}button,select{background:#222b36;color:var(--txt);border:1px solid var(--line);border-radius:5px;padding:4px 10px}
+button:hover{background:#2b3644}
+.clock{font-variant-numeric:tabular-nums;min-width:90px;text-align:right}
+.tiles{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.tile{background:#11161c;border:1px solid var(--line);border-radius:6px;padding:8px}
+.tile .k{color:var(--dim);font-size:11px}.tile .v{font-size:22px;font-weight:600;font-variant-numeric:tabular-nums}
+.tile .t{color:var(--tru);font-size:11px}
+table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+td,th{padding:2px 4px;text-align:right}th{color:var(--dim);font-weight:500}td:first-child,th:first-child{text-align:left}
+.sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:6px}
+.badges{display:flex;gap:6px;flex-wrap:wrap}.badge{padding:2px 8px;border-radius:99px;font-size:11px;border:1px solid var(--line);color:var(--dim)}
+.badge.on{color:#fff;background:var(--bad);border-color:var(--bad)}.badge.ok{color:var(--ok);border-color:#2d5a3b}
+.charts{display:grid;grid-template-columns:1fr 1fr;gap:14px;padding:0 18px 18px}
+.legend{display:flex;gap:12px;color:var(--dim);font-size:11px;margin-top:4px;flex-wrap:wrap}
+.legend i{display:inline-block;width:14px;height:0;border-top:2px solid;vertical-align:middle;margin-right:4px}
+.note{color:var(--dim);font-size:11px;margin-top:8px}
+.episode{color:var(--bad);font-weight:600}
+</style></head><body>
+<header><h1>FlowGuard / Module 1: vision</h1>
+<span class="sub">Approach W_J1, synthetic traffic through the real Aggregator and health code. Solid = camera, grey = what the toy sim knows.</span></header>
+<div class="wrap">
+ <div>
+  <div class="panel"><h2>Camera view (top-down) <span id="episode" class="episode"></span></h2>
+   <canvas id="road" width="1120" height="330"></canvas>
+   <div class="controls">
+    <button id="play">Pause</button>
+    <select id="speed"><option value="1">1x</option><option value="2" selected>2x</option><option value="5">5x</option><option value="10">10x</option></select>
+    <input id="seek" type="range" min="0" value="0"><span class="clock" id="clock"></span>
+   </div>
+   <div class="legend"><span><i style="border-color:#4da3ff"></i>tracked vehicle (id, confidence)</span><span><i style="border-color:#9aa7b8;border-top-style:dashed"></i>true vehicle position</span><span>space = play/pause, click a chart to seek</span></div>
+  </div>
+ </div>
+ <div style="display:grid;gap:14px;align-content:start">
+  <div class="panel"><h2>Measurement now (one per second)</h2>
+   <div class="tiles">
+    <div class="tile"><div class="k">in zone</div><div class="v" id="zone">0</div><div class="t" id="zoneT"></div></div>
+    <div class="tile"><div class="k">queued</div><div class="v" id="queue">0</div><div class="t" id="queueT"></div></div>
+    <div class="tile"><div class="k">arrivals / s</div><div class="v" id="arr">0</div><div class="t" id="arrT"></div></div>
+    <div class="tile"><div class="k">departures / s</div><div class="v" id="dep">0</div><div class="t" id="depT"></div></div>
+   </div></div>
+  <div class="panel"><h2>Per class</h2><table id="cls"></table></div>
+  <div class="panel"><h2>Quality block (what the Guard receives)</h2>
+   <div class="badges" id="badges"></div>
+   <table style="margin-top:8px" id="qual"></table></div>
+  <div class="panel"><h2>Camera error vs truth, whole run</h2><table id="mae"></table>
+   <div class="note" id="note"></div></div>
+ </div>
+</div>
+<div class="charts">
+ <div class="panel"><h2>Vehicles in zone</h2><canvas class="ch" id="c1" width="640" height="200"></canvas><div class="legend"><span><i style="border-color:#4da3ff"></i>camera</span><span><i style="border-color:#9aa7b8;border-top-style:dashed"></i>truth</span></div></div>
+ <div class="panel"><h2>Queued vehicles</h2><canvas class="ch" id="c2" width="640" height="200"></canvas><div class="legend"><span><i style="border-color:#4da3ff"></i>camera</span><span><i style="border-color:#9aa7b8;border-top-style:dashed"></i>truth</span></div></div>
+ <div class="panel"><h2>Flow per second</h2><canvas class="ch" id="c3" width="640" height="200"></canvas><div class="legend"><span><i style="border-color:#4da3ff"></i>arrivals</span><span><i style="border-color:#ffb454"></i>departures</span><span><i style="border-color:#9aa7b8;border-top-style:dashed"></i>truth (dashed)</span></div></div>
+ <div class="panel"><h2>Image health and detector</h2><canvas class="ch" id="c4" width="640" height="200"></canvas><div class="legend"><span><i style="border-color:#c792ea"></i>blur</span><span><i style="border-color:#f6e05e"></i>brightness</span><span><i style="border-color:#ff6b6b"></i>displacement /10</span><span><i style="border-color:#52d273"></i>confidence</span><span><i style="border-color:#fff"></i>frozen</span></div></div>
+</div>
+<script>
+const D=/*DATA*/null;
+const COL=["#4da3ff","#ffb454","#52d273","#c792ea","#ff6b6b","#b08968"];
+const sum=o=>Object.values(o).reduce((a,b)=>a+b,0);
+const $=id=>document.getElementById(id);
+const nF=D.frames.length, cyc=D.cycle[0]+D.cycle[1];
+const isGreen=t=>t%cyc>=D.cycle[0];
+const epAt=t=>D.episodes.find(e=>t>=e.t0&&t<e.t1);
+$("seek").max=nF-1;
+let f=0,playing=true,last=performance.now(),acc=0;
+
+// ---------- road ----------
+const rc=$("road"),rx=rc.getContext("2d"),SX=1.5,SY=2.6,OX=20,OY=24;
+function road(i){
+ const t=i/D.fps, ep=epAt(t);
+ rx.clearRect(0,0,rc.width,rc.height);
+ rx.fillStyle="#12171d";rx.fillRect(0,0,rc.width,rc.height);
+ const X=x=>OX+x*SX,Y=y=>OY+y*SY;
+ rx.fillStyle="#1d242d";rx.fillRect(X(0),Y(0),700*SX,100*SY);
+ rx.fillStyle="rgba(77,163,255,.08)";rx.fillRect(X(0),Y(0),600*SX,100*SY);
+ rx.strokeStyle="#3a4656";rx.setLineDash([6,6]);
+ [33,66].forEach(y=>{rx.beginPath();rx.moveTo(X(0),Y(y));rx.lineTo(X(700),Y(y));rx.stroke()});
+ rx.beginPath();rx.moveTo(X(0),Y(0));rx.lineTo(X(0),Y(100));rx.stroke();rx.setLineDash([]);
+ rx.fillStyle="#8493a6";rx.font="11px system-ui";
+ rx.fillText("entry",X(0)+4,Y(100)+14);rx.fillText("camera zone 60 m",X(250),Y(100)+14);
+ ["L","S","R"].forEach((l,k)=>rx.fillText(l,X(660),Y(16+k*33+8)));
+ rx.fillText("movement regions",X(610),Y(100)+14);
+ rx.strokeStyle=isGreen(t)?"#52d273":"#ff6b6b";rx.lineWidth=4;
+ rx.beginPath();rx.moveTo(X(600),Y(0));rx.lineTo(X(600),Y(100));rx.stroke();rx.lineWidth=1;
+ // true
+ rx.setLineDash([3,3]);rx.strokeStyle="#9aa7b8";
+ for(const [x,y,c,len] of D.truth[i]) rx.strokeRect(X(x-len*10),Y(y)-8,len*10*SX,16);
+ rx.setLineDash([]);
+ // tracked
+ const sev=ep&&ep.kind!="frozen"?0:0;
+ for(const [id,c,x,y,conf] of D.frames[i]){
+  const len=[4.5,2,3,3,10,8][c]*10;
+  rx.fillStyle=COL[c]+"cc";rx.fillRect(X(x-len/2),Y(y)-7,len*SX,14);
+  rx.fillStyle="#fff";rx.font="10px system-ui";rx.fillText(id+" "+conf.toFixed(2),X(x-len/2),Y(y)-10);
+ }
+ // header over road
+ rx.fillStyle=isGreen(t)?"#52d273":"#ff6b6b";rx.beginPath();rx.arc(X(600)+0,12,7,0,7);rx.fill();
+ rx.fillStyle="#dbe3ee";rx.font="12px system-ui";rx.fillText(isGreen(t)?"GREEN":"RED",X(600)+14,16);
+ rx.fillText("signal",X(600)-48,16);
+ $("episode").textContent=ep?"  fault: "+ep.label:"";
+ $("clock").textContent="t = "+t.toFixed(1)+" s";
+}
+
+// ---------- charts ----------
+const ms=D.ms, ts=D.truth_sec, T=ms.map(m=>m.time);
+const S={
+ zoneC:ms.map(m=>sum(m.zone_counts)),zoneT:ts.map(s=>s.zone),
+ qC:ms.map(m=>sum(m.queue_counts)),qT:ts.map(s=>s.queue),
+ aC:ms.map(m=>sum(m.arrivals)),aT:ts.map(s=>s.arr),
+ dC:ms.map(m=>m.departures.left&&["left","straight","right"].reduce((a,k)=>a+sum(m.departures[k]),0)),dT:ts.map(s=>s.dep),
+ blur:ms.map(m=>m.quality.image_health.blur),br:ms.map(m=>m.quality.image_health.brightness),
+ disp:ms.map(m=>Math.min(1,m.quality.image_health.displacement_px/10)),
+ conf:ms.map(m=>m.quality.detector_confidence?m.quality.detector_confidence.mean:0),
+ fr:ms.map(m=>m.quality.image_health.frozen?1:0)};
+const charts=[
+ {id:"c1",s:[[S.zoneT,"#9aa7b8",1],[S.zoneC,"#4da3ff"]]},
+ {id:"c2",s:[[S.qT,"#9aa7b8",1],[S.qC,"#4da3ff"]]},
+ {id:"c3",s:[[S.aT,"#9aa7b8",1],[S.dT,"#9aa7b8",1],[S.aC,"#4da3ff"],[S.dC,"#ffb454"]]},
+ {id:"c4",s:[[S.blur,"#c792ea"],[S.br,"#f6e05e"],[S.disp,"#ff6b6b"],[S.conf,"#52d273"],[S.fr,"#ffffff"]],max:1.05}];
+function chart(ch,t){
+ const cv=$(ch.id),g=cv.getContext("2d"),W=cv.width,H=cv.height,L=34,B=18,R=6,Tp=6;
+ const max=ch.max||Math.max(1,...ch.s.flatMap(s=>s[0]))*1.1;
+ const X=v=>L+(v/D.dur)*(W-L-R),Y=v=>Tp+(1-v/max)*(H-Tp-B);
+ g.clearRect(0,0,W,H);
+ for(const e of D.episodes){g.fillStyle="rgba(255,107,107,.10)";g.fillRect(X(e.t0),Tp,X(e.t1)-X(e.t0),H-Tp-B);
+  if(ch.id=="c4"){g.fillStyle="#ff9b9b";g.font="10px system-ui";g.fillText(e.kind,X(e.t0)+3,Tp+10)}}
+ g.strokeStyle="#2a3340";g.fillStyle="#8493a6";g.font="10px system-ui";
+ for(let k=0;k<=4;k++){const v=max*k/4;g.beginPath();g.moveTo(L,Y(v));g.lineTo(W-R,Y(v));g.stroke();g.fillText(v>=10?v.toFixed(0):v.toFixed(1),2,Y(v)+3)}
+ for(let s=0;s<=D.dur;s+=20)g.fillText(s,X(s)-6,H-4);
+ for(const [d,c,dash] of ch.s){g.strokeStyle=c;g.lineWidth=dash?1.2:1.8;g.setLineDash(dash?[4,3]:[]);g.beginPath();
+  d.forEach((v,k)=>{const x=X(T[k]),y=Y(v);k?g.lineTo(x,y):g.moveTo(x,y)});g.stroke()}
+ g.setLineDash([]);g.lineWidth=1;g.strokeStyle="#fff";g.beginPath();g.moveTo(X(t),Tp);g.lineTo(X(t),H-B);g.stroke();
+}
+document.querySelectorAll(".ch").forEach(cv=>cv.addEventListener("click",e=>{
+ const r=cv.getBoundingClientRect(),px=(e.clientX-r.left)/r.width*cv.width;
+ f=Math.max(0,Math.min(nF-1,Math.round((px-34)/(cv.width-40)*D.dur*D.fps)));draw()}));
+
+// ---------- panels ----------
+const fmt=(v,d=2)=>v==null?"n/a":v.toFixed(d);
+function panels(i){
+ const t=i/D.fps;let k=T.filter(x=>x<=t+1e-9).length-1;if(k<0)return;
+ const m=ms[k],tr=ts[k],q=m.quality,ih=q.image_health,dc=q.detector_confidence;
+ const dep=["left","straight","right"].map(x=>m.departures[x]);
+ $("zone").textContent=S.zoneC[k];$("zoneT").textContent="truth "+tr.zone;
+ $("queue").textContent=S.qC[k];$("queueT").textContent="truth "+tr.queue;
+ $("arr").textContent=S.aC[k];$("arrT").textContent="truth "+tr.arr;
+ $("dep").textContent=S.dC[k];$("depT").textContent="truth "+tr.dep+" (L "+sum(dep[0])+" S "+sum(dep[1])+" R "+sum(dep[2])+")";
+ let h="<tr><th></th><th>zone</th><th>queue</th><th>arr</th><th>dep</th></tr>";
+ D.classes.forEach((c,j)=>h+=`<tr><td><span class="sw" style="background:${COL[j]}"></span>${c}</td><td>${m.zone_counts[c]}</td><td>${m.queue_counts[c]}</td><td>${m.arrivals[c]}</td><td>${dep.reduce((a,x)=>a+x[c],0)}</td></tr>`);
+ $("cls").innerHTML=h;
+ const b=(on,txt)=>`<span class="badge ${on?"on":"ok"}">${txt}</span>`;
+ $("badges").innerHTML=b(ih.frozen,"FROZEN")+b(ih.brightness<.25,"DARK")+b(ih.blur>.6,"BLURRY")+b(ih.displacement_px>2,"SHIFTED")+b(q.track_breaks_per_min>0,"TRACK BREAK");
+ $("qual").innerHTML=`<tr><td>detector confidence</td><td>${fmt(dc&&dc.mean)} +/- ${fmt(dc&&dc.std)}</td></tr>
+ <tr><td>track breaks / min</td><td>${fmt(q.track_breaks_per_min,0)}</td></tr>
+ <tr><td>blur (0 sharp, 1 unusable)</td><td>${fmt(ih.blur)}</td></tr>
+ <tr><td>brightness</td><td>${fmt(ih.brightness)}</td></tr>
+ <tr><td>displacement</td><td>${fmt(ih.displacement_px,1)} px</td></tr>
+ <tr><td>measurement time</td><td>${m.time.toFixed(0)} s</td></tr>`;
+}
+// error summary, computed once
+(function(){
+ const grp=(test)=>{let n=0,ez=0,eq=0,ea=0;ms.forEach((m,k)=>{if(test(T[k])){n++;ez+=Math.abs(S.zoneC[k]-S.zoneT[k]);eq+=Math.abs(S.qC[k]-S.qT[k]);ea+=Math.abs(S.aC[k]-S.aT[k])}});return [n,ez/n,eq/n,ea/n]};
+ const ok=grp(t=>!epAt(t-1)&&!epAt(t)),bad=grp(t=>epAt(t));
+ const r=a=>`<td>${a[1].toFixed(2)}</td><td>${a[2].toFixed(2)}</td><td>${a[3].toFixed(2)}</td>`;
+ $("mae").innerHTML=`<tr><th>mean abs error</th><th>zone</th><th>queue</th><th>arr</th></tr><tr><td>healthy (${ok[0]} s)</td>${r(ok)}</tr><tr><td>faulted (${bad[0]} s)</td>${r(bad)}</tr>`;
+ $("note").textContent=D.unresolved+" departure(s) lost between stop line and movement region. Healthy error is the tracker/aggregation floor; the faulted rows are what the Guard has to catch.";
+})();
+
+function draw(){road(f);panels(f);charts.forEach(c=>chart(c,f/D.fps));$("seek").value=f}
+$("play").onclick=()=>{playing=!playing;$("play").textContent=playing?"Pause":"Play"};
+$("seek").oninput=e=>{f=+e.target.value;draw()};
+addEventListener("keydown",e=>{if(e.code=="Space"){e.preventDefault();$("play").click()}});
+function loop(now){
+ if(playing){acc+=(now-last)/1000*D.fps*+$("speed").value;const n=Math.floor(acc);if(n){acc-=n;f=(f+n)%nF;draw()}}
+ last=now;requestAnimationFrame(loop)}
+draw();requestAnimationFrame(loop);
+</script></body></html>

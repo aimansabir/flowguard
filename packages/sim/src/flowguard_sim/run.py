@@ -19,7 +19,9 @@ envelope) -> SUMO. Logged to results/<run_id>/:
 import argparse
 import hashlib
 import json
+from collections.abc import Callable
 from contextlib import ExitStack
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal, TextIO, cast
@@ -27,7 +29,7 @@ from typing import Any, Literal, TextIO, cast
 import traci
 from pydantic import BaseModel
 
-from flowguard_contracts import ClassCounts, CoreConfig, StepOutput
+from flowguard_contracts import ClassCounts, CoreConfig, Measurement, StepOutput
 from flowguard_core import Core
 from flowguard_sim import webster
 from flowguard_sim.conflicts import read_conflicts
@@ -77,12 +79,26 @@ def _jsonl(records: list[BaseModel]) -> str:
     return "".join(r.model_dump_json() + "\n" for r in records)
 
 
+@dataclass(frozen=True)
+class StepEvent:
+    """One second of the closed loop, handed to `on_step` (dashboards, loggers)."""
+
+    t: float
+    seen: list[Measurement]  # what the core received
+    truth: list[Measurement]  # full-edge ground truth
+    step: StepOutput
+    pcu: Callable[[ClassCounts], float]
+
+
 def run(controller: str, seconds: int, seed: int, results_dir: Path = ROOT / "results",
         camera_zone_m: float | None | Literal["config"] = FROM_CONFIG,
-        faults: str | None = None, guard: str = "passthrough") -> dict[str, Any]:
+        faults: str | None = None, guard: str = "passthrough",
+        on_step: Callable[[StepEvent], None] | None = None) -> dict[str, Any]:
     """camera_zone_m: metres the simulated camera sees; None = the whole edge;
     FROM_CONFIG = take it from config/sim.json. faults: scenario name in
-    config/faults/, None = clean camera. guard: see core_config."""
+    config/faults/, None = clean camera. guard: see core_config. on_step runs
+    each second after the commands are applied and before SUMO advances, so
+    traci state still matches t."""
     if seconds <= 0:
         raise ValueError("seconds must be > 0")
     sim_cfg = load_json("config/sim.json")
@@ -149,6 +165,8 @@ def run(controller: str, seconds: int, seed: int, results_dir: Path = ROOT / "re
             logs["measurements"].write(_jsonl(list(seen)))
             logs["states"].write(_jsonl(list(step.states)))
             logs["commands"].write(_jsonl(list(step.commands)))
+            if on_step is not None:
+                on_step(StepEvent(t, seen, truth, step, pcu))
 
             traci.simulationStep()
             departed += cast(int, traci.simulation.getDepartedNumber())
