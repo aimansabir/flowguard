@@ -96,7 +96,9 @@ D26). v1's blocks, each optional with every field defaulted:
 | `trust` | `suspect_score`, `suspect_s`, `faulty_score`, `faulty_s`, `recover_s` | G2 thresholds (score 0-1) and durations (s) |
 | `virtual_sensor` | `arrival_window_s`, `margin_growth_pcu_per_s`, `extend_queue_beyond_zone` | G3 trusted-rate window (s), margin growth (PCU/s), report the virtual queue past a full zone while trusted |
 
-Under v1, `queue_estimate` is the measured queue when TRUSTED or SUSPECT and
+Under v1 an approach without a measurement this second still gets a state (its virtual estimate,
+`override_flag` true, measured fields 0, trust state held; D30). Under v1, `queue_estimate` is the
+measured queue when TRUSTED or SUSPECT and
 the virtual queue when FAULTY; `margin` is 0 when TRUSTED, |measured -
 virtual| + the virtual margin when SUSPECT, the virtual margin when FAULTY.
 

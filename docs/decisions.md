@@ -677,3 +677,33 @@ causes, neither a defect in E1-E5:
   displaced and `mixed`: identical results. Clean runs: FAULTY 0.00-0.07 %
   of approach-seconds, unchanged; the main-entry blackout runs 0.00 ->
   0.07 % and 0.00 -> 0.20 %.
+
+## D30. Guard v1 covers missing measurements and stops blaming the wrong camera (2026-10-28)
+Two limits of D25/D28, fixed in `guard/v1.rs` without a contract change.
+
+- **Missing measurements (dropout).** The core used to emit a state only for
+  approaches that sent a measurement, so a controller read a camera whose
+  link was down as an empty road (`DecisionInput::queue` gives 0): in the
+  exploratory dropout run E_J3 was missing 719 of 3600 s with a real queue
+  of 18.9 PCU on average. Guard v1 now gives such an approach a state from
+  its virtual sensor: `queue_estimate` and `margin` from G3 (the margin keeps
+  growing with time since the last trusted reading), `override_flag` true,
+  measured fields 0, trust state held (an absent camera has not shown a
+  fault in its counts). Passthrough is unchanged (no state, as before), and
+  so are the controllers: they read `queue_estimate` as before and now get
+  the estimate instead of 0. Missing seconds are still visible to every
+  reader: the approach has no line in `measurements.jsonl`, and G4 scores
+  them as MISSING and counts them as covered by the virtual sensor.
+- **E3 blaming the downstream camera.** E3 compares two cameras and cannot
+  say which one is wrong; in the exploratory runs an undercounting camera
+  made the camera downstream of it FAULTY (J1_J2 at 699-864 s in `mixed`).
+  Before combining, E3 on an approach is now scaled by 1 - the strongest
+  suspicion among its feeders, where a feeder's suspicion is its own
+  combined evidence without E3 (E1, E2, E4, E5, E6), or 0.5 if it is already
+  SUSPECT, 1 if FAULTY. A disagreement that a faulty feeder explains no
+  longer lands on its healthy neighbour; one that no feeder explains still
+  does. Uses only the Guard's own evidence, never fault labels. Unit test:
+  an undercounting feeder whose own E5 fires leaves the downstream camera
+  TRUSTED, and the same test fails with the scaling switched off (checked).
+  Limit: a downstream fault during a period its feeder is also suspect is
+  only caught by the downstream camera's own checks.

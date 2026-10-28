@@ -127,6 +127,18 @@ def test_clean_run_without_faults_file(tmp_path: Path) -> None:
     assert r["false_alarms"]["suspect_or_faulty_rate"] == 2 / 200
 
 
+def test_virtual_cover_for_missing_measurements(tmp_path: Path) -> None:
+    # Guard v1 fills in a state for seconds whose measurement never arrived;
+    # those stay MISSING (no camera verdict) and are counted as covered
+    faults: list[str | None] = ["dropout"] * 6
+    run = write_run(tmp_path, {"A": faults}, {"A": [T] * 6})
+    (run / "measurements.jsonl").write_text("".join(
+        json.dumps({"time": float(t), "approach_id": "A"}) + "\n" for t in (0, 2, 4)))
+    r = evaluate(run)
+    assert r["confusion"]["dropout"] == {"TRUSTED": 3, "SUSPECT": 0, "FAULTY": 0, "MISSING": 3}
+    assert r["missing_covered_by_virtual_sensor"] == {"dropout": 3}
+
+
 def test_load_and_episodes_agree(tmp_path: Path) -> None:
     run = write_run(tmp_path, {"A": [None, "freeze", "freeze", None]}, {"A": [T, T, F, T]})
     truth, decision = load(run)

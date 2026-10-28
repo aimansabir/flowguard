@@ -9,17 +9,19 @@
 //! | FAULTY    | virtual             | virtual margin                      | true          |
 //!
 //! `margin` is a +/- PCU range around `queue_estimate` that a conservative
-//! controller can use (control spec C4). With `extend_queue_beyond_zone`, a
+//! controller can use (control spec C4). An approach whose measurement did
+//! not arrive this second still gets a state: the virtual queue and margin,
+//! `override_flag` set, measured fields 0, trust state held (D30). With `extend_queue_beyond_zone`, a
 //! TRUSTED approach whose zone is full reports the virtual queue when it is
 //! longer than the camera can see, with `override_flag` set.
 
 use crate::contracts::{
     ApproachState, CheckWeights, CombineConfig, EvidenceConfig, PcuWeights, SilenceEvidence, TrustConfig,
-    TrustState, VirtualSensorConfig,
+    TrustState, VirtualSensorConfig, SCHEMA_VERSION,
 };
 use crate::corridor::CorridorIndex;
 use crate::error::{Error, Result};
-use crate::guard::evidence::{self, EvidenceParams, EvidenceTracker, Signal};
+use crate::guard::evidence::{self, Evidence, EvidenceParams, EvidenceTracker, Signal};
 use crate::guard::silence::{self, Silence};
 use crate::guard::trust::{self, Trust};
 use crate::guard::virtual_sensor::{Anchor, QueueInput, QueueParams, Supply, VirtualQueue};
@@ -110,6 +112,55 @@ impl GuardV1 {
     }
 }
 
+impl GuardV1 {
+    /// E3 says a link's two ends disagree, not which camera is wrong (D25).
+    /// A feeder with evidence of its own (every check but E3), or already
+    /// SUSPECT or FAULTY, explains the disagreement to that degree, so the
+    /// downstream approach's E3 is scaled by 1 - the strongest such
+    /// suspicion among its feeders (D30).
+    fn attribute_disagreement(&self, rated: &mut [Evidence]) {
+        let own: Vec<f64> = rated
+            .iter()
+            .enumerate()
+            .map(|(u, e)| {
+                let own = trust::combine(&Evidence { cross_junction: None, ..*e }, &self.weights).unwrap_or(0.0);
+                let held = match self.trust[u].state {
+                    TrustState::Trusted => 0.0,
+                    TrustState::Suspect => self.trust_cfg.suspect_score,
+                    TrustState::Faulty => 1.0,
+                };
+                own.max(held)
+            })
+            .collect();
+        for (d, e) in rated.iter_mut().enumerate() {
+            if let Some(x) = e.cross_junction {
+                let blame = self.evidence.feeders(d).iter().map(|&(u, _)| own[u]).fold(0.0, f64::max);
+                e.cross_junction = Some(x * (1.0 - blame));
+            }
+        }
+    }
+
+    /// State for an approach whose measurement did not arrive this second.
+    fn unmeasured(&self, input: &GuardInput<'_>, a: usize, q: f64, margin: f64) -> ApproachState {
+        let ix = input.corridor;
+        let approach = &ix.corridor.approaches[a];
+        ApproachState {
+            schema_version: SCHEMA_VERSION.into(),
+            time: input.t,
+            junction_id: approach.junction.clone(),
+            approach_id: approach.id.clone(),
+            measured_queue_pcu: 0.0,
+            queue_estimate: q,
+            margin,
+            trust_state: self.trust[a].state,
+            override_flag: true,
+            arrivals_pcu: 0.0,
+            departures_pcu: 0.0,
+            exits_to: ix.neighbours[ix.junction_of(a)].iter().map(|n| (n.clone(), 0)).collect(),
+        }
+    }
+}
+
 impl Guard for GuardV1 {
     fn name(&self) -> &str {
         "v1"
@@ -126,6 +177,7 @@ impl Guard for GuardV1 {
                 e.silence = self.silence[a].update(silence::is_empty(m), m.interval_s, rate, &self.silence_cfg);
             }
         }
+        self.attribute_disagreement(&mut rated);
         for (a, e) in rated.iter().enumerate() {
             self.scores[a] = trust::combine(e, &self.weights);
             if let Some(m) = &input.measurements[a] {
@@ -162,10 +214,14 @@ impl Guard for GuardV1 {
             self.queues[a].update(input.t, &x);
         }
 
-        // what the controllers see
+        // what the controllers see; a missing measurement is covered by the
+        // virtual sensor instead of leaving the controller nothing (read as 0)
         for (a, state) in states.iter_mut().enumerate() {
-            let Some(s) = state else { continue };
             let (virtual_q, virtual_margin) = (self.queues[a].queue(), self.queues[a].margin());
+            let Some(s) = state else {
+                *state = Some(self.unmeasured(input, a, virtual_q, virtual_margin));
+                continue;
+            };
             s.trust_state = self.trust[a].state;
             match s.trust_state {
                 TrustState::Trusted => {
@@ -362,10 +418,15 @@ mod tests {
         }
         let before = rig.guard.trust_state(A_N);
         let q = rig.guard.virtual_queue(A_N);
-        // a_n red: no measurement for 30 s; the estimate keeps running
+        // a_n red: no measurement for 30 s; the estimate keeps running and
+        // the controller is given it, flagged as not measured
         for t in 50..80 {
             let s = rig.step(f64::from(t), vec![], &[cmd("A", 0), None]);
-            assert!(s[A_N].is_none());
+            let s = s[A_N].as_ref().expect("a state although nothing was measured");
+            assert!(s.override_flag);
+            assert_eq!((s.measured_queue_pcu, s.queue_estimate, s.trust_state), (0.0, q, before));
+            assert!(s.margin > 0.0);
+            assert_eq!(s.exits_to.keys().collect::<Vec<_>>(), vec!["B"]);
         }
         assert_eq!(rig.guard.trust_state(A_N), before);
         assert_eq!(rig.guard.virtual_queue(A_N), q);
@@ -424,6 +485,34 @@ mod tests {
     fn silence_is_not_judged_before_a_full_trusted_window() {
         // the first car alone would make the rate 1 PCU/s
         assert_eq!(entry_goes_silent(1, 50, 299), None);
+    }
+
+    /// a_w sends a platoon of 10 straight into b_w every 60 s; b_w sees all of
+    /// it arrive 20 s later. `a_w_bad`: a_w's camera reports only 4 of each
+    /// platoon leaving and its zone count jumps around (its own E5 fires).
+    fn upstream_fault(a_w_bad: bool) -> TrustState {
+        let mut rig = Rig::new(TrustConfig::default());
+        let commands = [cmd("A", 0), cmd("B", 1)];
+        for t in 0..600 {
+            let platoon = |t: i32| if t % 60 == 0 { 10 } else { 0 };
+            let (zone, dep) = if a_w_bad { ([8, 3, 6, 2, 7, 1, 5][(t % 7) as usize], platoon(t) * 4 / 10) } else { (3, platoon(t)) };
+            let ms = vec![
+                meas("a_w", f64::from(t), zone, 0, dep, dep),
+                meas("b_w", f64::from(t), 2, 0, if t >= 20 { platoon(t - 20) } else { 0 }, 0),
+            ];
+            rig.step(f64::from(t), ms, &commands);
+        }
+        assert!(!a_w_bad || rig.guard.trust_state(A_W) != TrustState::Trusted);
+        rig.guard.trust_state(B_W)
+    }
+
+    #[test]
+    fn a_faulty_upstream_camera_does_not_get_the_downstream_one_blamed() {
+        // b_w's E3 sees vehicles arriving that a_w never reported; a_w's own
+        // evidence explains that, so b_w stays trusted
+        assert_eq!(upstream_fault(true), TrustState::Trusted);
+        // with a healthy a_w nothing disagrees at all
+        assert_eq!(upstream_fault(false), TrustState::Trusted);
     }
 
     #[test]
