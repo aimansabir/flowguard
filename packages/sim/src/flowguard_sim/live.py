@@ -173,7 +173,7 @@ def camera(m: Measurement) -> dict[str, Any]:
     """What Module 1 handed the core for one approach this second (vehicles, not PCU)."""
     q = m.quality
     health = None
-    if q.image_health is not None or q.detector_confidence is not None or q.track_breaks_per_min is not None:
+    if q is not None and (q.image_health or q.detector_confidence or q.track_breaks_per_min is not None):
         health = {"img": q.image_health.model_dump() if q.image_health else None,
                   "conf": q.detector_confidence.mean if q.detector_confidence else None,
                   "breaks": q.track_breaks_per_min}
@@ -206,7 +206,8 @@ def frame(ev: StepEvent, down: dict[str, str | None], vehicles: list[list[float]
             "ex": {j: n for j, n in s.exits_to.items() if n},
         }
     for a in set(down) | set(app):
-        row = app.setdefault(a, {"miss": True, "tq": round(ev.pcu(truth[a].queue_counts), 2) if a in truth else None})
+        tq = round(ev.pcu(truth[a].queue_counts), 2) if a in truth else None
+        row = app.setdefault(a, {"miss": True, "tq": tq})
         if a in seen:
             row["cam"] = camera(seen[a])
         else:
@@ -247,7 +248,8 @@ class EvidenceView:
         sim_cfg = load_json("config/sim.json")
         self.ids = [a.id for a in corridor.approaches]
         self.jids = [j.id for j in corridor.junctions]
-        self.tracker = EvidenceCopy(load_json(sim_cfg["corridor_file"]), load_json("config/pcu.json")["weights"])
+        weights = load_json("config/pcu.json")["weights"]
+        self.tracker = EvidenceCopy(load_json(sim_cfg["corridor_file"]), weights)
         self.last: list[Any] = [None] * len(self.jids)
 
     def update(self, ev: StepEvent) -> dict[str, dict[str, float]]:
@@ -264,7 +266,7 @@ def signal_links() -> dict[str, str]:
     """The link state string SUMO shows at each junction: G protected, g give way."""
     import traci
 
-    return {j: traci.trafficlight.getRedYellowGreenState(j) for j in traci.trafficlight.getIDList()}
+    return {str(j): str(traci.trafficlight.getRedYellowGreenState(j)) for j in traci.trafficlight.getIDList()}
 
 
 def serve_live(hub: Hub, corridor: Corridor, controller: str, seconds: int, seed: int,
@@ -298,7 +300,8 @@ def read_run(path: Path) -> tuple[dict[float, list[Measurement]], dict[float, li
     return group(path / "measurements.jsonl", Measurement), group(path / "truth.jsonl", Measurement), cmds
 
 
-def serve_replay(hub: Hub, corridor: Corridor, controller: str, path: Path, guard: str = "passthrough") -> None:
+def serve_replay(hub: Hub, corridor: Corridor, controller: str, path: Path,
+                 guard: str = "passthrough") -> None:
     seen, truth, cmds = read_run(path)
     if not seen:
         raise SystemExit(f"no measurements.jsonl in {path}")

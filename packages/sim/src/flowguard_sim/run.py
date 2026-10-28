@@ -169,7 +169,8 @@ def run(controller: str, seconds: int, seed: int, results_dir: Path = ROOT / "re
             logs["states"].write(_jsonl(list(step.states)))
             logs["commands"].write(_jsonl(list(step.commands)))
             if on_step is not None:
-                labels = {m.approach_id: injector.active_kind(t, m.approach_id) for m in view} if faults else {}
+                labels = ({m.approach_id: injector.active_kind(t, m.approach_id) for m in view}
+                          if faults else {})
                 on_step(StepEvent(t, seen, truth, step, pcu, labels))
 
             traci.simulationStep()
