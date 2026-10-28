@@ -19,6 +19,9 @@ truth, shown to the viewer, never to the core). The E1-E5 evidence scores come f
 flowguard_sim.evidence_replay, the Python copy held to the Rust scores by a shared
 fixture (D25); the core does not expose its own. E6 and the combined score are not
 shown: only the core has them.
+
+GET /api/results lists the runs under --results (default results/) for the
+Research view: their summary.json and guard_eval scores, read-only.
 """
 # pyright: basic
 # traci ships without type information.
@@ -39,6 +42,7 @@ from flowguard_sim.corridor import load_corridor
 from flowguard_sim.evidence_replay import FIELDS as EVIDENCE
 from flowguard_sim.evidence_replay import Tracker as EvidenceCopy
 from flowguard_sim.paths import ROOT, load_json, without_notes
+from flowguard_sim.results_index import ResultsIndex
 from flowguard_sim.run import CONTROLLERS, GUARDS, StepEvent, core_config, run
 
 CLASSES = ("car", "motorcycle", "rickshaw", "qingqi", "bus", "truck")
@@ -76,7 +80,7 @@ class Hub:
                 time.sleep(0.005)
 
 
-def make_handler(hub: Hub) -> type[BaseHTTPRequestHandler]:
+def make_handler(hub: Hub, index: ResultsIndex | None = None) -> type[BaseHTTPRequestHandler]:
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *_: Any) -> None:
             pass
@@ -84,13 +88,19 @@ def make_handler(hub: Hub) -> type[BaseHTTPRequestHandler]:
         def do_GET(self) -> None:
             if self.path == "/events":
                 self._events()
+            elif self.path == "/api/results":
+                data = index.snapshot() if index else {"root": None, "runs": [], "scoring": 0}
+                self._send(json.dumps(data).encode(), "application/json")
             else:
-                body = PAGE.read_bytes()
-                self.send_response(200)
-                self.send_header("Content-Type", "text/html; charset=utf-8")
-                self.send_header("Content-Length", str(len(body)))
-                self.end_headers()
-                self.wfile.write(body)
+                self._send(PAGE.read_bytes(), "text/html; charset=utf-8")
+
+        def _send(self, body: bytes, kind: str) -> None:
+            self.send_response(200)
+            self.send_header("Content-Type", kind)
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
 
         def do_POST(self) -> None:
             body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
@@ -147,7 +157,8 @@ def downstream(corridor: Corridor) -> dict[str, str | None]:
 
 
 def layout(corridor: Corridor, controller: str, mode: str, label: str, speed: float,
-           guard: str = "passthrough", faults: str | None = None) -> dict[str, Any]:
+           guard: str = "passthrough", faults: str | None = None, seed: int | None = None,
+           seconds: int | None = None) -> dict[str, Any]:
     cap = load_json("config/maxpressure.json")["capacity"]
     down = downstream(corridor)
     approaches = [{
@@ -158,6 +169,7 @@ def layout(corridor: Corridor, controller: str, mode: str, label: str, speed: fl
     return {
         "mode": mode, "source": label, "speed": speed, "controller": controller,
         "guard": cfg["guard"]["kind"], "faults": faults, "evidence": list(EVIDENCE),
+        "seed": seed, "seconds": seconds, "controller_cfg": cfg["controller"], "guard_cfg": cfg["guard"],
         "driving_side": load_json("config/sim.json").get("driving_side", "right"),
         "timing": without_notes(load_json("config/signal.json")), "spillback": cap["spillback_occupancy"],
         "classes": CLASSES, "net": network_geometry(),
@@ -181,8 +193,9 @@ def camera(m: Measurement) -> dict[str, Any]:
         return sum(c.model_dump().values())
 
     d = m.departures
-    return {"src": m.source, "z": n(m.zone_counts), "qv": n(m.queue_counts), "a": n(m.arrivals),
-            "d": [n(d.left), n(d.straight), n(d.right)], "h": health}
+    zone = m.zone_counts.model_dump()
+    return {"src": m.source, "z": n(m.zone_counts), "zc": [zone[c] for c in CLASSES], "qv": n(m.queue_counts),
+            "a": n(m.arrivals), "d": [n(d.left), n(d.straight), n(d.right)], "h": health}
 
 
 def frame(ev: StepEvent, down: dict[str, str | None], vehicles: list[list[float]] | None,
@@ -273,7 +286,7 @@ def serve_live(hub: Hub, corridor: Corridor, controller: str, seconds: int, seed
                guard: str = "passthrough", faults: str | None = None) -> None:
     down = downstream(corridor)
     label = f"SUMO, seed {seed}" + (f", faults: {faults}" if faults else ", no faults")
-    hub.publish("init", layout(corridor, controller, "live", label, hub.speed, guard, faults))
+    hub.publish("init", layout(corridor, controller, "live", label, hub.speed, guard, faults, seed, seconds))
     hub.client_seen.wait(timeout=120)
     evidence = EvidenceView(corridor)
 
@@ -300,16 +313,33 @@ def read_run(path: Path) -> tuple[dict[float, list[Measurement]], dict[float, li
     return group(path / "measurements.jsonl", Measurement), group(path / "truth.jsonl", Measurement), cmds
 
 
+def read_faults(path: Path) -> dict[float, dict[str, str | None]]:
+    """time -> approach -> injected fault (None = clean) from faults.jsonl; empty if absent."""
+    out: dict[float, dict[str, str | None]] = {}
+    file = path / "faults.jsonl"
+    if file.is_file():
+        for line in file.read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                r = json.loads(line)
+                out.setdefault(float(r["time"]), {})[r["approach_id"]] = r["fault"]
+    return out
+
+
 def serve_replay(hub: Hub, corridor: Corridor, controller: str, path: Path,
                  guard: str = "passthrough") -> None:
     seen, truth, cmds = read_run(path)
     if not seen:
         raise SystemExit(f"no measurements.jsonl in {path}")
+    injected = read_faults(path)
+    recorded = path / "summary.json"
+    info = json.loads(recorded.read_text(encoding="utf-8")) if recorded.is_file() else {}
     down = downstream(corridor)
     core = Core((ROOT / load_json("config/sim.json")["corridor_file"]).read_text(),
                 core_config(controller, guard).model_dump_json())
-    hub.publish("init", layout(corridor, controller, "replay", f"recorded run {path.name}", hub.speed, guard))
+    hub.publish("init", layout(corridor, controller, "replay", f"recorded run {path.name}", hub.speed, guard,
+                               info.get("faults"), info.get("seed"), len(seen)))
     hub.client_seen.wait(timeout=120)
+    evidence = EvidenceView(corridor)
 
     from flowguard_contracts import ClassCounts, StepOutput
 
@@ -319,8 +349,8 @@ def serve_replay(hub: Hub, corridor: Corridor, controller: str, path: Path,
     for t in sorted(seen):
         batch = "[" + ",".join(m.model_dump_json() for m in seen[t]) + "]"
         step = StepOutput.model_validate_json(core.step(t, batch))
-        event = StepEvent(t, seen[t], truth.get(t, []), step, pcu)
-        hub.publish("frame", frame(event, down, None, cmds.get(t)))
+        event = StepEvent(t, seen[t], truth.get(t, []), step, pcu, injected.get(t, {}))
+        hub.publish("frame", frame(event, down, None, cmds.get(t), evidence.update(event)))
         hub.pace()
     hub.publish("done", {"controller": controller, "seconds": len(seen),
                          "interventions": json.loads(core.interventions_json())})
@@ -339,13 +369,15 @@ def main() -> None:
                     help="address to listen on; 0.0.0.0 only inside a container whose port is "
                          "published to the host's 127.0.0.1")
     ap.add_argument("--port", type=int, default=8765)
+    ap.add_argument("--results", type=Path, default=ROOT / "results",
+                    help="directory of past runs shown in the Research view (read-only)")
     ap.add_argument("--open", action="store_true")
     args = ap.parse_args()
 
     corridor = load_corridor(ROOT / load_json("config/sim.json")["corridor_file"])
     hub = Hub()
     hub.speed = args.speed
-    server = ThreadingHTTPServer((args.host, args.port), make_handler(hub))
+    server = ThreadingHTTPServer((args.host, args.port), make_handler(hub, ResultsIndex(args.results)))
     threading.Thread(target=server.serve_forever, daemon=True).start()
     url = f"http://127.0.0.1:{args.port}/"
     print(f"dashboard at {url}  (Ctrl-C to stop)")

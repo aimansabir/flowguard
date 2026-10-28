@@ -784,3 +784,40 @@ Two limits of D25/D28, fixed in `guard/v1.rs` without a contract change.
   TRUSTED, and the same test fails with the scaling switched off (checked).
   Limit: a downstream fault during a period its feeder is also suspect is
   only caught by the downstream camera's own checks.
+
+## D31. Dashboard: five views on one stream, research results read-only (2026-10-28)
+The live dashboard (`flowguard_sim/live.py` + `live.html`) is one page with
+five views, Overview, Vision, Guard, Controller and Research, switched by the
+URL fragment. All views read the same server-sent event stream and the same
+frame history, so switching views never restarts or reconnects the
+simulation; selections (camera, junction) persist between views.
+
+What the backend sends was extended only to expose data that already
+existed: per-class zone counts in each camera summary, the seed and run
+length, the controller and Guard configurations the core was built with,
+and, in replay, the run's injected faults (`faults.jsonl`) and the E1-E5
+parity view. Nothing in the core, the controllers, SUMO or fault injection
+changed.
+
+Rules the page follows:
+- The trust state, override and estimate shown are the core's outputs. The
+  E1-E5 bars are the Python parity copy (D25) and are labelled as such; E6
+  and the combined score are not exposed by the core and are not drawn.
+- Injected faults are experiment ground truth, drawn in their own colour and
+  lane, never mixed into the Guard's verdict.
+- A missing measurement (`NO DATA`) is shown separately from the trust state.
+- The Controller view recomputes max-pressure from the same estimates with
+  the formula in `control/maxpressure.rs` (including the spillback gate) to
+  explain a decision. When the exposed outputs cannot explain one, it says
+  so instead of guessing.
+- Signal colours on the map come from SUMO's own link states when the run
+  provides them; a check over a 900 s run found them equal to the core's
+  commands in every approach-second.
+- The Vision view shows a camera image only if the video pipeline supplies
+  one; with the simulated camera it says so and shows the SUMO zone instead.
+
+Research view: `GET /api/results` lists the run folders under `--results`
+(default `results/`), reading `summary.json`, and scores runs that have a
+Guard log with `guard_eval.evaluate` in a separate process, so a live run is
+not slowed. It writes nothing into the run folders; a `guard_eval.json`
+already there is used as is. Findings are labelled preliminary.

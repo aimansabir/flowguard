@@ -7,7 +7,8 @@ from pathlib import Path
 
 from flowguard_contracts import ClassCounts, Corridor, Measurement, StepOutput
 from flowguard_core import Core
-from flowguard_sim.live import Hub, downstream, frame, read_run
+from flowguard_sim.live import Hub, downstream, frame, layout, read_faults, read_run
+from flowguard_sim.results_index import ResultsIndex
 from flowguard_sim.run import StepEvent, core_config
 from flowguard_vision.stub import empty_measurement
 
@@ -60,3 +61,59 @@ def test_hub_pace_holds_while_paused_and_follows_speed() -> None:
     assert not done.wait(0.3)
     hub.paused = False
     assert done.wait(2)
+
+
+def test_frame_camera_counts_each_class(corridor: Corridor, corridor_path: Path) -> None:
+    core = Core(corridor_path.read_text(), core_config("maxpressure").model_dump_json())
+    ms = [empty_measurement(0.0, a.junction, a.id, 60.0) for a in corridor.approaches]
+    zone = {**ms[0].zone_counts.model_dump(), "car": 3, "qingqi": 2}
+    ms[0] = ms[0].model_copy(update={"zone_counts": ClassCounts.model_validate(zone)})
+    batch = "[" + ",".join(m.model_dump_json() for m in ms) + "]"
+    step = StepOutput.model_validate_json(core.step(0.0, batch))
+    ev = StepEvent(0.0, ms, [], step, lambda c: core.pcu(c.model_dump_json()))
+    cam = frame(ev, downstream(corridor), None, None)["app"][ms[0].approach_id]["cam"]
+    assert cam["zc"] == [3, 0, 0, 2, 0, 0] and cam["z"] == 5  # car, motorcycle, rickshaw, qingqi, bus, truck
+
+
+def test_layout_carries_seed_and_configs(corridor: Corridor) -> None:
+    out = layout(corridor, "maxpressure_hyst_cap", "live", "x", 4.0, "v1", "smoke", 7, 300)
+    assert out["seed"] == 7 and out["seconds"] == 300 and out["faults"] == "smoke"
+    assert out["controller_cfg"]["capacity"]["spillback_occupancy"] > 0
+    assert out["guard_cfg"]["kind"] == "v1" and out["guard_cfg"]["trust"]["recover_s"] > 0
+    json.dumps(out)
+
+
+def test_read_faults_groups_by_time(tmp_path: Path) -> None:
+    rows = [{"time": 1.0, "approach_id": "W_J1", "fault": "freeze"},
+            {"time": 1.0, "approach_id": "E_J3", "fault": None}]
+    (tmp_path / "faults.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
+    assert read_faults(tmp_path) == {1.0: {"W_J1": "freeze", "E_J3": None}}
+    assert read_faults(tmp_path / "missing") == {}
+
+
+def test_results_index_reads_runs_without_writing(tmp_path: Path) -> None:
+    done = tmp_path / "exp" / "runs" / "maxpressure_seed1"
+    done.mkdir(parents=True)
+    (done / "summary.json").write_text(json.dumps({"controller": "maxpressure", "guard": "v1", "seed": 1}))
+    states = [{"time": float(t), "approach_id": "W_J1", "trust_state": "TRUSTED"} for t in range(3)]
+    (done / "states.jsonl").write_text("".join(json.dumps(s) + "\n" for s in states))
+    running = tmp_path / "live_run"
+    running.mkdir()
+    (running / "measurements.jsonl").write_text("")
+    before = {p: p.stat().st_mtime_ns for p in tmp_path.rglob("*")}
+
+    index = ResultsIndex(tmp_path)
+    first = index.snapshot()
+    assert [(r["run"], r["status"], r["group"]) for r in first["runs"]] == [
+        ("maxpressure_seed1", "complete", "exp/runs"), ("live_run", "incomplete", "")]
+    assert first["scoring"] == 1
+    index.wait(10)
+    row = index.snapshot()["runs"][0]
+    assert row["eval"]["false_alarms"]["clean_rated_seconds"] == 3
+    assert "episodes" not in row["eval"]
+    assert {p: p.stat().st_mtime_ns for p in tmp_path.rglob("*")} == before  # nothing written
+
+
+def test_results_index_of_a_missing_directory_is_empty(tmp_path: Path) -> None:
+    root = tmp_path / "none"
+    assert ResultsIndex(root).snapshot() == {"root": str(root), "runs": [], "scoring": 0}

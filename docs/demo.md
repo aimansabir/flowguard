@@ -23,9 +23,14 @@ later builds reuse them.
 
 ```powershell
 # smoke: every fault kind within 5 minutes, Guard v1, Khizer's max-pressure with hysteresis and spillback gate
-docker run --rm -it --init --name flowguard -p 127.0.0.1:8765:8765 flowguard `
+docker run --rm -it --init --name flowguard -p 127.0.0.1:8765:8765 `
+    -v "${PWD}\results:/app/results" flowguard `
     --controller maxpressure_hyst_cap --guard v1 --faults smoke --seconds 300
 ```
+
+The `-v` line is optional: it lets the Research view read the runs in
+`results\` (read-only) and keeps this run's logs there. Without it the run
+still works and Research shows an empty state.
 
 In a second PowerShell window:
 
@@ -33,9 +38,10 @@ In a second PowerShell window:
 Start-Process "http://127.0.0.1:8765/"
 ```
 
-The simulation waits until the page connects, then runs. On the page:
-Pause/Play (or the space bar), the speed selector (simulated seconds per
-second), the timeline slider to scrub back and "Live" to return.
+The simulation waits until the page connects, then runs. In the header:
+play/pause (or the space bar), the speed selector (simulated seconds per
+second; at "max" a run goes as fast as SUMO and the core allow), the clock,
+and under it the timeline slider to scrub back with "Back to live" to return.
 
 Other runs (stop the previous one first):
 
@@ -79,26 +85,51 @@ docker run --rm -v "${PWD}\results:/app/results" --entrypoint python flowguard `
     -m flowguard_sim.guard_eval /app/results/<run directory>
 ```
 
+## Replay a recorded run
+
+```powershell
+docker run --rm -it --init --name flowguard -p 127.0.0.1:8765:8765 `
+    -v "${PWD}\results:/app/results" flowguard `
+    --controller maxpressure_hyst_cap --guard v1 --speed 32 `
+    --replay results/<folder>/<run directory>
+```
+
+The recorded measurements are fed to the core again (open loop). Replays
+show the run's injected faults; vehicle positions are not recorded, so the
+map draws signals and camera states only.
+
 ## What the page shows
 
-- **Corridor** (Karachi left-hand traffic): vehicles by class (red outline =
-  stopped), stop-line bars in the envelope's signal colours, a light dot
-  where SUMO shows a give-way green (the right turn across oncoming traffic),
-  camera zones coloured by the Guard's verdict (green trusted, amber suspect,
-  red faulty), `VIRTUAL` where the controller is fed the virtual sensor,
-  `fault: ...` where the experiment injects a fault, `no data` where a
-  measurement did not arrive.
-- **Junction cards (Module 3)**: phase and stage, time in phase against the
-  minimum green, the max-pressure term of each phase, and why the phase was
-  kept or switched, including envelope interventions.
-- **Module 2 / Guard**: per camera the injected fault (experiment ground
-  truth, never given to the core), trust state, camera queue, the queue the
-  controller is given with its margin (highlighted when VIRTUAL), and the
-  E1-E5 evidence (from the parity-tested Python copy; E6 and the combined
-  score are internal to the core). A timeline of every camera's trust.
-- **Module 1 / camera**: what the camera reported per approach this second
-  (vehicles in the zone, stopped, arrived, left by movement, image health).
-  In SUMO runs the camera is simulated (`source: sim`) and reports no image
-  health; video-derived measurements say `source: camera`.
-- **Queues**: camera, the controller's estimate and SUMO's true queue on the
-  whole approach (reference only), and the phase timeline and decision log.
+Five views share one stream: switching between them does not restart the
+simulation, and the selected camera and junction carry over.
+
+- **Overview**: the corridor from the SUMO network (Karachi left-hand
+  traffic), vehicles by class (red tail = stopped), stop-line bars in SUMO's
+  own signal colours (light dot = give-way green), camera zones coloured by
+  the Guard (blue trusted, amber suspect, red faulty) with `VIRTUAL` where
+  the controller is fed the virtual sensor and `NO DATA` where a measurement
+  did not arrive. Click a camera to open it in Guard, a junction badge to
+  open it in Controller. Below: one card per module, the current event, and
+  the run's fault and recovery timeline (click to jump).
+- **Vision (Module 1)**: the selected camera's measurement this second
+  (vehicles per class in the zone, stopped, arrivals, departures by
+  movement, queue) and its image health. In SUMO runs the camera is
+  simulated and labelled so; there is no video, and the view shows the SUMO
+  camera zone instead. Video, YOLO boxes and track IDs appear only when the
+  video pipeline supplies them.
+- **Guard (Module 2)**: trust per camera; for the selected one the camera
+  value against the value the controller receives (with its margin), SUMO's
+  queue for reference, the injected fault (ground truth, never given to the
+  core), a queue chart with the fault interval and trust transitions, a
+  timeline, recovery status, and the E1-E5 evidence from the parity-tested
+  Python copy (E6 and the combined score live only in the core).
+- **Controller (Module 3)**: per junction the stage, time in phase against
+  the minimum green, the pressure of each phase, requested against approved
+  phase; for the selected junction the reason for keeping or switching
+  (hysteresis, spillback gate, envelope), the pressure calculation, a phase
+  timeline and the decision log. Parameters are under a fold.
+- **Research**: the experiment sets under `results\`: completed runs,
+  traffic performance with and without the Guard by scenario, and the
+  Guard's detection rate, delay, false alarms, recovery and virtual-sensor
+  coverage (scored with `guard_eval` when the view opens; a one-hour set of
+  48 runs takes a few minutes). Labelled preliminary.
