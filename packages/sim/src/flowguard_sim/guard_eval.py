@@ -9,8 +9,11 @@ into each run directory. Semantics (docs/decisions.md D27):
 
 - Every approach-second in faults.jsonl is one sample. Its truth is the fault
   kind active on that approach, or "clean". Its decision is the logged
-  trust_state, or MISSING when no state was logged (the measurement never
-  arrived, e.g. dropout). A run without faults.jsonl is all clean, over the
+  trust_state, or MISSING when the measurement never arrived (e.g. dropout):
+  no state logged, or (Guard v1, D30) a state the virtual sensor filled in
+  for a second absent from measurements.jsonl. Those are counted as
+  `covered`: the controller got an estimate, not a camera verdict.
+  A run without faults.jsonl is all clean, over the
   approach-seconds that have a state.
 - FAULTY is the positive decision. SUSPECT is reported on its own, never
   folded into either side.
@@ -62,11 +65,23 @@ def _records(path: Path) -> list[dict[str, Any]]:
     return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
 
 
+def measured(run: Path) -> set[tuple[str, float]] | None:
+    """Approach-seconds that had a measurement; None if the run did not log them."""
+    path = run / "measurements.jsonl"
+    if not path.exists():
+        return None
+    return {(m["approach_id"], float(m["time"])) for m in _records(path)}
+
+
 def load(run: Path) -> tuple[dict[str, dict[float, str]], dict[str, dict[float, str]]]:
-    """(truth, decision): approach -> time -> fault kind or "clean" / trust state."""
+    """(truth, decision): approach -> time -> fault kind or "clean" / trust state
+    ("COVERED" for a state filled in for a second without a measurement)."""
+    had = measured(run)
     decision: dict[str, dict[float, str]] = defaultdict(dict)
     for s in _records(run / "states.jsonl"):
-        decision[s["approach_id"]][float(s["time"])] = s["trust_state"]
+        t = float(s["time"])
+        covered = had is not None and (s["approach_id"], t) not in had
+        decision[s["approach_id"]][t] = "COVERED" if covered else s["trust_state"]
     truth: dict[str, dict[float, str]] = defaultdict(dict)
     if (run / "faults.jsonl").exists():
         for f in _records(run / "faults.jsonl"):
@@ -129,11 +144,15 @@ def evaluate(run: Path) -> dict[str, Any]:
     recovering = _recovering(truth, eps)
 
     confusion: dict[str, dict[str, int]] = defaultdict(lambda: dict.fromkeys(STATES, 0))
+    covered: dict[str, int] = defaultdict(int)
     clean = {"rated": 0, "faulty": 0, "flagged": 0, "rated_outside_recovery": 0, "faulty_outside_recovery": 0,
              "flagged_outside_recovery": 0}
     for a, by_time in truth.items():
         for t, kind in by_time.items():
             state = decision.get(a, {}).get(t, "MISSING")
+            if state == "COVERED":
+                covered[kind] += 1
+                state = "MISSING"
             confusion[kind][state] += 1
             if kind != CLEAN or state == "MISSING":
                 continue
@@ -168,6 +187,7 @@ def evaluate(run: Path) -> dict[str, Any]:
         "run": run.name,
         "approach_seconds": sum(len(v) for v in truth.values()),
         "confusion": {k: confusion[k] for k in sorted(confusion)},
+        "missing_covered_by_virtual_sensor": {k: covered[k] for k in sorted(covered)},
         "false_alarms": {
             "clean_rated_seconds": clean["rated"],
             "faulty_rate": _rate(clean["faulty"], clean["rated"]),
@@ -202,6 +222,9 @@ def print_report(r: dict[str, Any]) -> None:
         print(f"  {kind:<11} {k['episodes']:>8} {k['detected']:>8} {k['flagged']:>7} "
               f"{_fmt(k['mean_detection_delay_s']):>10} {_fmt(k['max_detection_delay_s']):>9} "
               f"{k['recovered']:>4}/{k['ended']:<4} {_fmt(k['mean_recovery_s']):>10}")
+    for kind, n in r["missing_covered_by_virtual_sensor"].items():
+        print(f"  {kind}: {n} of {r['confusion'][kind]['MISSING']} seconds without a measurement covered "
+              "by the virtual sensor")
     print(f"  {'truth':<11} " + " ".join(f"{s:>8}" for s in STATES))
     for kind, row in r["confusion"].items():
         print(f"  {kind:<11} " + " ".join(f"{row[s]:>8}" for s in STATES))
