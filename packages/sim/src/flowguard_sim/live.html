@@ -31,11 +31,14 @@ th:first-child,td:first-child{text-align:left}.mini{display:inline-block;height:
 .lower{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:0 16px 16px}
 .log{max-height:230px;overflow:auto;font-size:12px}.log div{padding:3px 4px;border-bottom:1px solid #1d2530;cursor:pointer}.log div:hover{background:#1b2430}
 .log b{color:var(--blue)}.log .hold{color:var(--amber)}.dim{color:var(--dim)}
+.mod{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:0 16px 16px}
+.mod table td,.mod table th{padding:3px 5px}.virt{background:#4a1515;color:#ffb3b3;font-weight:700;border-radius:4px;padding:0 5px}
+.flt{color:#ff8a8a;font-weight:600}.ev{display:inline-block;margin-right:4px;padding:0 4px;border-radius:3px;background:#2a2230;font-size:11px}
 .legend{display:flex;gap:12px;flex-wrap:wrap;color:var(--dim);font-size:11px;margin-top:6px}.legend span::before{content:"";display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;background:var(--c);vertical-align:-1px}
 </style></head><body>
 <header>
  <h1>FlowGuard / live decisions</h1><span id="mode" class="pill">connecting</span>
- <span id="src" class="dim"></span><span id="ctl" class="dim"></span>
+ <span id="src" class="dim"></span><span id="ctl" class="dim"></span><span id="gpill" class="pill"></span>
  <span class="spacer"></span>
  <button id="play">Pause</button>
  <select id="speed"><option>1</option><option>2</option><option selected>4</option><option>8</option><option>16</option><option value="1000">max</option></select>
@@ -57,6 +60,16 @@ th:first-child,td:first-child{text-align:left}.mini{display:inline-block;height:
  <div class="panel"><h2><span>Phase timeline, last 5 minutes</span><span class="dim">ticks = envelope overrode the controller</span></h2><canvas id="pchart" width="800" height="150"></canvas>
   <h2 style="margin-top:10px">Decision log <span class="dim">click to jump</span></h2><div class="log" id="log"></div></div>
 </div>
+<div class="mod">
+ <div class="panel"><h2><span>Module 2 / Guard: trust per camera</span><span class="dim">fault = what the experiment injected (ground truth, never shown to the core)</span></h2>
+  <table id="guard"></table>
+  <h2 style="margin-top:10px"><span>Guard timeline, last 5 minutes</span><span class="dim">green trusted, amber suspect, red faulty; top tick = fault injected</span></h2>
+  <canvas id="gchart" width="800" height="200"></canvas>
+  <div class="dim" style="margin-top:4px">Evidence: E1-E5 scores from the parity-tested Python copy of the checks (the core does not expose its own); E6 and the combined score live only in the core.</div></div>
+ <div class="panel"><h2><span>Module 1 / camera measurements this second</span><span class="dim" id="srcnote"></span></h2>
+  <table id="cams"></table>
+  <div class="dim" style="margin-top:6px" id="healthnote"></div></div>
+</div>
 <script>
 const $=id=>document.getElementById(id);
 const CC=["#4da3ff","#ffb454","#3ddc84","#c792ea","#ff7b7b","#b08968"], CL=[4.5,2,3,3,10,8], CW=[1.8,.8,1.4,1.4,2.5,2.4];
@@ -75,7 +88,8 @@ function setup(){
  UP={};L.approaches.forEach(a=>{if(a.down)(UP[a.down]=UP[a.down]||[]).push(a.id)});
  B=L.net.bounds;const c=$("map");SC=Math.min((c.width-30)/(B[2]-B[0]),(c.height-30)/(B[3]-B[1]));
  $("mode").textContent=L.mode=="live"?"LIVE SUMO":"REPLAY (past data)";$("mode").className="pill "+L.mode;
- $("speed").value=String(L.speed);if(!$("speed").value)$("speed").add(new Option(L.speed,L.speed,true,true));$("src").textContent=L.source;$("ctl").textContent="controller: "+L.controller+"   guard: "+L.guard;
+ $("speed").value=String(L.speed);if(!$("speed").value)$("speed").add(new Option(L.speed,L.speed,true,true));$("src").textContent=L.source;$("ctl").textContent="controller: "+L.controller+"   ("+L.driving_side+"-hand traffic)";
+ $("gpill").textContent="Guard "+L.guard+(L.faults?"  |  faults: "+L.faults:"  |  no faults");$("gpill").className="pill "+(L.guard=="v1"?"live":"replay");
  $("appsel").innerHTML=L.approaches.map(a=>`<option>${a.id}</option>`).join("");
  $("cards").innerHTML=L.junctions.map(j=>`<div class="card" id="card-${j.id}"></div>`).join("");
 }
@@ -101,16 +115,25 @@ function drawMap(f){
  g.setLineDash([]);
  // camera zone
  for(const a of L.approaches){const e=L.net.edges.find(x=>x.id==a.id);if(!e)continue;
-  g.strokeStyle="rgba(77,163,255,.22)";g.lineWidth=e.width*SC*1.05;for(const l of e.lanes){path(tail(l,60));g.stroke()}}
+  const s=f.app[a.id],tr=s&&s.tr!==undefined?s.tr:-1;
+  g.strokeStyle=tr<0?"rgba(130,130,130,.35)":["rgba(61,220,132,.30)","rgba(255,210,63,.55)","rgba(255,93,93,.65)"][tr];
+  g.lineWidth=e.width*SC*1.05;for(const l of e.lanes){path(tail(l,60));g.stroke()}
+  const q=e.lanes[0],m=tail(q,60),mid=m[Math.floor(m.length/2)],[mx,my]=px(mid[0],mid[1]);g.font="bold 11px system-ui";
+  if(s&&s.f){g.fillStyle="#ff8a8a";g.fillText("fault: "+s.f,mx-30,my+(a.id.startsWith("N")||a.id.startsWith("J2_J1")||a.id.startsWith("J3_J2")||a.id.startsWith("E_")?26:-14))}
+  if(s&&s.ov){g.fillStyle="#ff5d5d";g.fillText("VIRTUAL",mx-24,my+(a.id.startsWith("N")?40:-28))}
+  if(s&&s.miss){g.fillStyle="#9aa7b8";g.fillText("no data",mx-20,my+12)}}
  // vehicles
  if(f.veh)for(const [x,y,ang,cls,sp] of f.veh){const [X,Y]=px(x,y);g.save();g.translate(X,Y);g.rotate(ang*Math.PI/180);
   const w=Math.max(CW[cls]*SC*1.6,3),h=Math.max(CL[cls]*SC*1.6,5);g.fillStyle=CC[cls];g.fillRect(-w/2,-h/2,w,h);
   if(sp<.1){g.strokeStyle="#ff3b3b";g.lineWidth=1.2;g.strokeRect(-w/2-.5,-h/2-.5,w+1,h+1)}g.restore()}
  // signals + queue labels
  for(const a of L.approaches){const e=L.net.edges.find(x=>x.id==a.id);if(!e)continue;const jn=f.jn[a.junction],s=f.app[a.id];if(!jn)continue;
+  const sl=f.links&&f.links[a.junction],li=JN[a.junction].links.map((k,i)=>k[0]==a.id?i:-1).filter(i=>i>=0);
+  const ch=sl?li.map(i=>sl[i]).join(""):"";const giveway=ch.includes("g");
   g.strokeStyle=LC[light(a.junction,a.id,jn)];g.lineWidth=5;g.lineCap="round";g.beginPath();
   const ends=e.lanes.map(l=>l[l.length-1]);ends.forEach((q,i)=>{const [x,y]=px(q[0],q[1]);const p=e.lanes[i],r=p[p.length-2],[rx,ry]=px(r[0],r[1]);
    const dx=x-rx,dy=y-ry,n=Math.hypot(dx,dy)||1,nx=-dy/n*e.width*SC*.5,ny=dx/n*e.width*SC*.5;g.moveTo(x-nx,y-ny);g.lineTo(x+nx,y+ny)});g.stroke();g.lineCap="butt";
+  if(giveway){const q0=ends[0],[gx,gy]=px(q0[0],q0[1]);g.fillStyle="#a5f2c4";g.beginPath();g.arc(gx,gy,3.5,0,7);g.fill()}
   if(s){const q=e.lanes[0],prev=tail(q,34)[tail(q,34).length-1];const [x,y]=px(prev[0],prev[1]);
    const occ=s.est/a.storage,col=occ>L.spillback?"#ff5d5d":occ>.5?"#ffb454":"#cfe3ff";
    g.font="bold 12px system-ui";g.fillStyle="rgba(10,14,20,.8)";const txt=s.est.toFixed(1);g.fillRect(x-14,y-18,30,14);g.fillStyle=col;g.fillText(txt,x-11,y-7);
@@ -183,6 +206,37 @@ function pchart(){
  g.fillStyle="#8493a6";for(let s=Math.ceil(x0/60)*60;s<=x1;s+=60)g.fillText(s,X(s)-8,H-3);
  g.fillStyle="#fff";g.fillRect(X(F[view].t),0,1,H-14);}
 
+// ---------- Module 2: Guard ----------
+function guard(f){
+ let h=`<tr><th>approach</th><th>fault</th><th>trust</th><th>camera</th><th>controller uses</th><th>evidence (E1-E5)</th></tr>`;
+ for(const a of L.approaches){const s=f.app[a.id]||{};
+  const tr=s.tr!==undefined?`<span class="badge ${["bg","by","br"][s.tr]}">${TRUSTN[s.tr]}</span>`:'<span class="dim">no state</span>';
+  const cam=s.q!==undefined&&!s.miss?s.q.toFixed(1):'<span class="dim">no data</span>';
+  const use=s.est!==undefined?`${s.ov?'<span class="virt">':""}${s.est.toFixed(1)} &plusmn; ${s.m.toFixed(1)}${s.ov?" VIRTUAL</span>":""}`:'<span class="dim">-</span>';
+  const ev=s.evd?Object.entries(s.evd).filter(([k,v])=>v>=0.1).map(([k,v])=>`<span class="ev">${k} ${v.toFixed(2)}</span>`).join(""):"";
+  h+=`<tr><td>${a.id}</td><td>${s.f?`<span class="flt">${s.f}</span>`:'<span class="dim">-</span>'}</td><td>${tr}</td><td>${cam}</td><td>${use}</td><td style="text-align:left">${ev||'<span class="dim">quiet</span>'}</td></tr>`}
+ $("guard").innerHTML=h}
+function gchart(){
+ const c=$("gchart"),g=c.getContext("2d"),W=c.width,H=c.height,[x0,x1]=win();g.clearRect(0,0,W,H);
+ const rows=L.approaches.length,rh=(H-16)/rows,X=t=>60+(t-x0)/(x1-x0)*(W-66);g.font="10px system-ui";
+ L.approaches.forEach((a,r)=>{g.fillStyle="#8493a6";g.fillText(a.id,2,r*rh+rh/2+4);
+  F.forEach(f=>{if(f.t<x0||f.t>F[view].t)return;const s=f.app[a.id];const w=Math.max(1,X(f.t+1)-X(f.t));
+   g.fillStyle=!s||s.tr===undefined?"#2a3038":TRUSTC[s.tr];g.fillRect(X(f.t),r*rh+3,w,rh-5);
+   if(s&&s.f){g.fillStyle="#ff3b3b";g.fillRect(X(f.t),r*rh+1,w,2)}if(s&&s.ov){g.fillStyle="#fff";g.fillRect(X(f.t),r*rh+rh-3,w,1)}})});
+ g.fillStyle="#8493a6";for(let s=Math.ceil(x0/60)*60;s<=x1;s+=60)g.fillText(s,X(s)-8,H-2);
+ g.fillStyle="#fff";g.fillRect(X(F[view].t),0,1,H-12)}
+// ---------- Module 1: measurements ----------
+function cams(f){
+ let h=`<tr><th>approach</th><th>in zone</th><th>stopped</th><th>arrived</th><th>left L/S/R</th><th>camera health</th></tr>`,src=new Set(),anyh=false;
+ for(const a of L.approaches){const s=f.app[a.id]||{},c=s.cam;
+  if(!c){h+=`<tr><td>${a.id}</td><td colspan="5" class="dim" style="text-align:left">no measurement this second (camera link down)</td></tr>`;continue}
+  src.add(c.src);if(c.h)anyh=true;
+  const hl=c.h?[c.h.img&&c.h.img.frozen?"frozen":"",c.h.img?`blur ${c.h.img.blur.toFixed(2)} bright ${c.h.img.brightness.toFixed(2)}`:"",c.h.conf!=null?`conf ${c.h.conf.toFixed(2)}`:""].filter(Boolean).join(", "):'<span class="dim">not reported</span>';
+  h+=`<tr><td>${a.id}</td><td>${c.z}</td><td>${c.qv}</td><td>${c.a}</td><td>${c.d.join(" / ")}</td><td style="text-align:left">${hl}</td></tr>`}
+ $("cams").innerHTML=h;
+ $("srcnote").textContent=[...src].map(x=>x=="sim"?"source: simulated camera (SUMO, last 60 m of each approach)":x=="camera"?"source: video pipeline":"source: "+x).join("; ");
+ $("healthnote").textContent=anyh?"":"Image health (Module 1, V4/V5) is only produced by the video pipeline; the simulated camera reports none, so the Guard's E1 has nothing to judge here."}
+
 // ---------- decision log ----------
 function logDecisions(f){
  for(const j of L.junctions){const jn=f.jn[j.id];
@@ -196,7 +250,7 @@ $("log").onclick=e=>{const d=e.target.closest("div[data-t]");if(d){view=F.findIn
 
 // ---------- control ----------
 function draw(){if(!L||!F.length)return;view=Math.max(0,Math.min(F.length-1,view));const f=F[view];
- drawMap(f);cards(f);qchart();pchart();drawLog();
+ drawMap(f);cards(f);qchart();pchart();drawLog();guard(f);gchart();cams(f);
  $("clock").textContent="t = "+f.t.toFixed(0)+" s";$("seek").value=view;
  $("seekt").textContent=follow?"following":("reviewing t="+f.t.toFixed(0)+" s");$("live").disabled=follow;
  if(!done)$("viewmode").textContent=follow?"":" (reviewing the past)"}

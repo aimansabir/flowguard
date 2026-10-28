@@ -1,6 +1,7 @@
 """Live dashboard: watch the closed loop decide, from SUMO or from recorded data.
 
     uv run python -m flowguard_sim.live --controller maxpressure_hyst --seconds 1800 --open
+    uv run python -m flowguard_sim.live --controller maxpressure_hyst_cap --guard v1 --faults smoke --open
     uv run python -m flowguard_sim.live --replay results/<run_dir> --controller maxpressure --open
 
 Sources:
@@ -12,6 +13,12 @@ Sources:
 
 The server pushes one frame per simulated second over server-sent events (stdlib only).
 The page keeps every frame, so you can scrub back while the run continues.
+
+With --faults, each frame also carries the injected fault per approach (G0 ground
+truth, shown to the viewer, never to the core). The E1-E5 evidence scores come from
+flowguard_sim.evidence_replay, the Python copy held to the Rust scores by a shared
+fixture (D25); the core does not expose its own. E6 and the combined score are not
+shown: only the core has them.
 """
 # pyright: basic
 # traci ships without type information.
@@ -29,8 +36,10 @@ from typing import Any
 from flowguard_contracts import Command, Corridor, Measurement
 from flowguard_core import Core
 from flowguard_sim.corridor import load_corridor
+from flowguard_sim.evidence_replay import FIELDS as EVIDENCE
+from flowguard_sim.evidence_replay import Tracker as EvidenceCopy
 from flowguard_sim.paths import ROOT, load_json, without_notes
-from flowguard_sim.run import CONTROLLERS, StepEvent, core_config, run
+from flowguard_sim.run import CONTROLLERS, GUARDS, StepEvent, core_config, run
 
 CLASSES = ("car", "motorcycle", "rickshaw", "qingqi", "bus", "truck")
 TRUST = ("TRUSTED", "SUSPECT", "FAULTY")
@@ -137,30 +146,51 @@ def downstream(corridor: Corridor) -> dict[str, str | None]:
     return {a.id: a.movements.straight if a.movements.straight in ids else None for a in corridor.approaches}
 
 
-def layout(corridor: Corridor, controller: str, mode: str, label: str, speed: float) -> dict[str, Any]:
+def layout(corridor: Corridor, controller: str, mode: str, label: str, speed: float,
+           guard: str = "passthrough", faults: str | None = None) -> dict[str, Any]:
     cap = load_json("config/maxpressure.json")["capacity"]
     down = downstream(corridor)
     approaches = [{
         "id": a.id, "junction": a.junction, "length": a.length_m, "lanes": a.lanes, "down": down[a.id],
         "storage": a.length_m * a.lanes / cap["jam_spacing_m"],
     } for a in corridor.approaches]
-    cfg = core_config(controller).model_dump()
+    cfg = core_config(controller, guard).model_dump()
     return {
         "mode": mode, "source": label, "speed": speed, "controller": controller,
-        "guard": cfg["guard"]["kind"],
+        "guard": cfg["guard"]["kind"], "faults": faults, "evidence": list(EVIDENCE),
+        "driving_side": load_json("config/sim.json").get("driving_side", "right"),
         "timing": without_notes(load_json("config/signal.json")), "spillback": cap["spillback_occupancy"],
         "classes": CLASSES, "net": network_geometry(),
-        "junctions": [{"id": j.id, "phases": j.phases} for j in corridor.junctions],
+        "junctions": [{"id": j.id, "phases": j.phases, "links": [[k.approach, k.direction] for k in j.links]}
+                      for j in corridor.junctions],
         "approaches": approaches,
     }
 
 
 # ---------- per-second frame ----------
 
+def camera(m: Measurement) -> dict[str, Any]:
+    """What Module 1 handed the core for one approach this second (vehicles, not PCU)."""
+    q = m.quality
+    health = None
+    if q.image_health is not None or q.detector_confidence is not None or q.track_breaks_per_min is not None:
+        health = {"img": q.image_health.model_dump() if q.image_health else None,
+                  "conf": q.detector_confidence.mean if q.detector_confidence else None,
+                  "breaks": q.track_breaks_per_min}
+    def n(c: Any) -> int:
+        return sum(c.model_dump().values())
+
+    d = m.departures
+    return {"src": m.source, "z": n(m.zone_counts), "qv": n(m.queue_counts), "a": n(m.arrivals),
+            "d": [n(d.left), n(d.straight), n(d.right)], "h": health}
+
+
 def frame(ev: StepEvent, down: dict[str, str | None], vehicles: list[list[float]] | None,
-          recorded: dict[str, Command] | None) -> dict[str, Any]:
+          recorded: dict[str, Command] | None, evidence: dict[str, dict[str, float]] | None = None,
+          links: dict[str, str] | None = None) -> dict[str, Any]:
     truth = {m.approach_id: m for m in ev.truth}
     states = {s.approach_id: s for s in ev.step.states}
+    seen = {m.approach_id: m for m in ev.seen}
     q = {a: s.queue_estimate for a, s in states.items()}
 
     def term(a: str) -> float:
@@ -175,6 +205,15 @@ def frame(ev: StepEvent, down: dict[str, str | None], vehicles: list[list[float]
             "tq": round(ev.pcu(truth[a].queue_counts), 2) if a in truth else None,
             "ex": {j: n for j, n in s.exits_to.items() if n},
         }
+    for a in set(down) | set(app):
+        row = app.setdefault(a, {"miss": True, "tq": round(ev.pcu(truth[a].queue_counts), 2) if a in truth else None})
+        if a in seen:
+            row["cam"] = camera(seen[a])
+        else:
+            row["miss"] = True
+        row["f"] = ev.faults.get(a)
+        if evidence and a in evidence:
+            row["evd"] = evidence[a]
     jn = {}
     for c in ev.step.commands:
         jn[c.junction_id] = {
@@ -184,7 +223,7 @@ def frame(ev: StepEvent, down: dict[str, str | None], vehicles: list[list[float]
             "rec": None if recorded is None or c.junction_id not in recorded else
             [recorded[c.junction_id].phase_index, recorded[c.junction_id].stage],
         }
-    return {"t": ev.t, "app": app, "jn": jn, "veh": vehicles}
+    return {"t": ev.t, "app": app, "jn": jn, "veh": vehicles, "links": links}
 
 
 def vehicle_snapshot() -> list[list[float]]:
@@ -201,16 +240,46 @@ def vehicle_snapshot() -> list[list[float]]:
 
 # ---------- sources ----------
 
-def serve_live(hub: Hub, corridor: Corridor, controller: str, seconds: int, seed: int) -> None:
+class EvidenceView:
+    """E1-E5 per approach from the Python copy, fed what the core was fed."""
+
+    def __init__(self, corridor: Corridor) -> None:
+        sim_cfg = load_json("config/sim.json")
+        self.ids = [a.id for a in corridor.approaches]
+        self.jids = [j.id for j in corridor.junctions]
+        self.tracker = EvidenceCopy(load_json(sim_cfg["corridor_file"]), load_json("config/pcu.json")["weights"])
+        self.last: list[Any] = [None] * len(self.jids)
+
+    def update(self, ev: StepEvent) -> dict[str, dict[str, float]]:
+        seen = {m.approach_id: m.model_dump(mode="json") for m in ev.seen}
+        scores = self.tracker.update(ev.t, [seen.get(a) for a in self.ids], self.last)
+        # the core decides at t on the commands it issued at t - 1
+        by_j = {c.junction_id: c.model_dump(mode="json") for c in ev.step.commands}
+        self.last = [by_j.get(j) for j in self.jids]
+        return {a: {n: round(v, 2) for n, v in zip(EVIDENCE, sc, strict=True) if v is not None}
+                for a, sc in zip(self.ids, scores, strict=True)}
+
+
+def signal_links() -> dict[str, str]:
+    """The link state string SUMO shows at each junction: G protected, g give way."""
+    import traci
+
+    return {j: traci.trafficlight.getRedYellowGreenState(j) for j in traci.trafficlight.getIDList()}
+
+
+def serve_live(hub: Hub, corridor: Corridor, controller: str, seconds: int, seed: int,
+               guard: str = "passthrough", faults: str | None = None) -> None:
     down = downstream(corridor)
-    hub.publish("init", layout(corridor, controller, "live", f"SUMO, seed {seed}", hub.speed))
+    label = f"SUMO, seed {seed}" + (f", faults: {faults}" if faults else ", no faults")
+    hub.publish("init", layout(corridor, controller, "live", label, hub.speed, guard, faults))
     hub.client_seen.wait(timeout=120)
+    evidence = EvidenceView(corridor)
 
     def on_step(ev: StepEvent) -> None:
-        hub.publish("frame", frame(ev, down, vehicle_snapshot(), None))
+        hub.publish("frame", frame(ev, down, vehicle_snapshot(), None, evidence.update(ev), signal_links()))
         hub.pace()
 
-    summary = run(controller, seconds, seed, on_step=on_step)
+    summary = run(controller, seconds, seed, faults=faults, guard=guard, on_step=on_step)
     hub.publish("done", summary)
 
 
@@ -229,14 +298,14 @@ def read_run(path: Path) -> tuple[dict[float, list[Measurement]], dict[float, li
     return group(path / "measurements.jsonl", Measurement), group(path / "truth.jsonl", Measurement), cmds
 
 
-def serve_replay(hub: Hub, corridor: Corridor, controller: str, path: Path) -> None:
+def serve_replay(hub: Hub, corridor: Corridor, controller: str, path: Path, guard: str = "passthrough") -> None:
     seen, truth, cmds = read_run(path)
     if not seen:
         raise SystemExit(f"no measurements.jsonl in {path}")
     down = downstream(corridor)
     core = Core((ROOT / load_json("config/sim.json")["corridor_file"]).read_text(),
-                core_config(controller).model_dump_json())
-    hub.publish("init", layout(corridor, controller, "replay", f"recorded run {path.name}", hub.speed))
+                core_config(controller, guard).model_dump_json())
+    hub.publish("init", layout(corridor, controller, "replay", f"recorded run {path.name}", hub.speed, guard))
     hub.client_seen.wait(timeout=120)
 
     from flowguard_contracts import ClassCounts, StepOutput
@@ -260,7 +329,12 @@ def main() -> None:
     ap.add_argument("--seconds", type=int, default=1800)
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--speed", type=float, default=4.0, help="simulated seconds per wall second")
+    ap.add_argument("--guard", choices=GUARDS, default="passthrough")
+    ap.add_argument("--faults", metavar="SCENARIO", help="fault scenario in config/faults/ (live mode)")
     ap.add_argument("--replay", type=Path, help="results/<run> directory to use as the data source")
+    ap.add_argument("--host", default="127.0.0.1",
+                    help="address to listen on; 0.0.0.0 only inside a container whose port is "
+                         "published to the host's 127.0.0.1")
     ap.add_argument("--port", type=int, default=8765)
     ap.add_argument("--open", action="store_true")
     args = ap.parse_args()
@@ -268,7 +342,7 @@ def main() -> None:
     corridor = load_corridor(ROOT / load_json("config/sim.json")["corridor_file"])
     hub = Hub()
     hub.speed = args.speed
-    server = ThreadingHTTPServer(("127.0.0.1", args.port), make_handler(hub))
+    server = ThreadingHTTPServer((args.host, args.port), make_handler(hub))
     threading.Thread(target=server.serve_forever, daemon=True).start()
     url = f"http://127.0.0.1:{args.port}/"
     print(f"dashboard at {url}  (Ctrl-C to stop)")
@@ -276,9 +350,9 @@ def main() -> None:
         webbrowser.open(url)
     try:
         if args.replay:
-            serve_replay(hub, corridor, args.controller, args.replay)
+            serve_replay(hub, corridor, args.controller, args.replay, args.guard)
         else:
-            serve_live(hub, corridor, args.controller, args.seconds, args.seed)
+            serve_live(hub, corridor, args.controller, args.seconds, args.seed, args.guard, args.faults)
         print("run finished; the page keeps the history. Ctrl-C to stop the server.")
         while True:
             time.sleep(1)

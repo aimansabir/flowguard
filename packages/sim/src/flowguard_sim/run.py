@@ -21,7 +21,7 @@ import hashlib
 import json
 from collections.abc import Callable
 from contextlib import ExitStack
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal, TextIO, cast
@@ -88,6 +88,9 @@ class StepEvent:
     truth: list[Measurement]  # full-edge ground truth
     step: StepOutput
     pcu: Callable[[ClassCounts], float]
+    # active injected fault per approach (G0 ground truth): for display and
+    # evaluation only, never given to the core
+    faults: dict[str, str | None] = field(default_factory=lambda: {})
 
 
 def run(controller: str, seconds: int, seed: int, results_dir: Path = ROOT / "results",
@@ -166,7 +169,8 @@ def run(controller: str, seconds: int, seed: int, results_dir: Path = ROOT / "re
             logs["states"].write(_jsonl(list(step.states)))
             logs["commands"].write(_jsonl(list(step.commands)))
             if on_step is not None:
-                on_step(StepEvent(t, seen, truth, step, pcu))
+                labels = {m.approach_id: injector.active_kind(t, m.approach_id) for m in view} if faults else {}
+                on_step(StepEvent(t, seen, truth, step, pcu, labels))
 
             traci.simulationStep()
             departed += cast(int, traci.simulation.getDepartedNumber())
