@@ -392,7 +392,7 @@ es.addEventListener("init",e=>{S.L=JSON.parse(e.data);S.F=[];S.EV=[];S.done=null
 es.addEventListener("frame",e=>{const f=JSON.parse(e.data);derive(f,S.F[S.F.length-1]);S.F.push(f);if(S.follow)S.view=S.F.length-1;S.conn="open";schedule()});
 es.addEventListener("done",e=>{S.done=JSON.parse(e.data);schedule();if(S.page==="research")loadResearch()});
 es.onerror=()=>{S.conn=S.done?"finished":"lost";schedule()};
-es.onopen=()=>{S.conn="open";schedule()};
+es.onopen=()=>{const was=S.conn;S.conn="open";if(was==="lost"&&S.page==="research")loadResearch();schedule()};
 
 function setup(){
  const L=S.L;
@@ -962,7 +962,9 @@ const METRICS={delay:["Average delay","s",s=>s.avg_delay_s,1],throughput:["Throu
 function research(){
  const el=$("p-research"),R=S.research;
  if(!R){el.innerHTML='<div class="card wide empty">Loading experiment results…</div>';return}
- if(R.error){el.innerHTML=`<div class="card wide empty"><b>Results unavailable</b>${esc(R.error)}</div>`;return}
+ if(R.error){el.innerHTML=`<div class="card wide empty"><b>${S.conn==="lost"?"The FlowGuard server is not reachable":"Results unavailable"}</b>
+  <span>${S.conn==="lost"?"The container serving this page has stopped. Start it again (see docs/demo.md); this page reconnects and reloads the results on its own.":esc(R.error)}</span>
+  <button class="btn" style="margin-top:14px" onclick="loadResearch()">Retry</button></div>`;return}
  if(!R.runs.length){el.innerHTML=`<div class="card wide empty"><svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="#97a6bc" stroke-width="1.6"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><b>No experiment runs found</b>
   The Research view reads <code>${esc(R.root)}</code>. Mount a results folder into the container (<code>-v "\${PWD}\\results:/app/results"</code>) to see completed runs.</div>`;return}
  const sets=[...new Set(R.runs.map(setOf))].sort();
