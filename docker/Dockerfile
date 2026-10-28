@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # FlowGuard demo: the Rust core, SUMO and the live dashboard, built and run in
 # Linux, so the Windows host never compiles or runs native FlowGuard code.
 #
@@ -21,7 +22,11 @@ ENV UV_PROJECT_ENVIRONMENT=/opt/venv UV_PYTHON_INSTALL_DIR=/opt/python UV_LINK_M
     CARGO_TARGET_DIR=/opt/target PATH=/opt/venv/bin:$PATH PYTHONUNBUFFERED=1
 WORKDIR /app
 COPY . .
-RUN uv sync --locked
+# downloads and the Rust build are cached between image builds
+RUN --mount=type=cache,target=/root/.cache/uv \
+    --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/opt/target \
+    uv sync --locked
 
 EXPOSE 8765
 ENTRYPOINT ["python", "-m", "flowguard_sim.live", "--host", "0.0.0.0"]
