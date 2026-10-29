@@ -6,8 +6,10 @@
 //! rules each second (decisions.md D3):
 //! 1. finish a yellow -> all-red -> green already under way; requests are
 //!    ignored until done, and that is not counted as an intervention;
-//! 2. if a red phase would pass max red once the clearance has run, start
-//!    switching to the one red the longest;
+//! 2. if serving the red phases one after another, red the longest first,
+//!    each at min green, would take any of them past max red, start switching
+//!    to the one red the longest (with two phases: when the red one would pass
+//!    max red once the clearance has run);
 //! 3. otherwise switch to the requested phase if the current green has run
 //!    min green, else hold it.
 //!
@@ -34,6 +36,13 @@ impl SignalTiming {
 
     pub fn clearance_s(&self) -> f64 {
         self.yellow_s + self.all_red_s
+    }
+
+    /// Longest a phase can be kept red when each of the other `n_phases - 1`
+    /// is served once at min green: its own all-red, then min green + clearance
+    /// for each of the others. A max red below this cannot be honoured.
+    pub fn worst_red_s(&self, n_phases: usize) -> f64 {
+        self.all_red_s + n_phases.saturating_sub(1) as f64 * (self.min_green_s + self.clearance_s())
     }
 }
 
@@ -66,6 +75,17 @@ impl SafetyEnvelope {
     /// starts in phase 0 green at t = 0.
     pub fn new(junctions: &[(String, usize)], timing: SignalTiming, controller_name: &str) -> Result<Self> {
         timing.validate()?;
+        for (id, n) in junctions {
+            if timing.max_red_s < timing.worst_red_s(*n) {
+                return Err(Error::Config(format!(
+                    "{id}: max_red_s {} s is below {} s, the red a phase needs while the other {} are each \
+                     served once at min green",
+                    timing.max_red_s,
+                    timing.worst_red_s(*n),
+                    n - 1
+                )));
+            }
+        }
         let signals = junctions
             .iter()
             .map(|(id, n)| Signal {
@@ -136,20 +156,36 @@ fn step_one(s: &mut Signal, timing: &SignalTiming, t: f64, requested: Option<usi
 
     if s.stage == Stage::Green {
         let green_for = t - s.stage_started;
-        // the clearance still has to run after we start switching, so a
-        // starving phase is caught clearance_s before it hits max red
-        let mut starving: Option<(usize, f64)> = None;
-        for &(p, since) in &s.red_since {
-            let due = t - since + timing.clearance_s() >= timing.max_red_s;
-            if due && starving.is_none_or(|(_, best)| since < best) {
-                starving = Some((p, since));
-            }
-        }
+        // Red phases in the order a forced switch serves them: red the longest
+        // first (stable, so ties keep insertion order). The k-th of them gets
+        // green no sooner than one clearance plus k x (min green + clearance)
+        // after the current green may end, so it is due once that would reach
+        // max red. Switching to the first as soon as any is due keeps every
+        // phase within max red (checked feasible in `new`); with two phases
+        // this is "red phase due clearance_s before max red".
+        let mut queue = s.red_since.clone();
+        queue.sort_by(|a, b| a.1.total_cmp(&b.1));
+        let free_at = t + (timing.min_green_s - green_for).max(0.0);
+        let slot = timing.min_green_s + timing.clearance_s();
+        let due = queue.iter().enumerate().any(|(k, &(_, since))| {
+            free_at + timing.clearance_s() + k as f64 * slot - since >= timing.max_red_s
+        });
+        let starving = queue.first().filter(|_| due);
         let wants_change = wanted.is_some_and(|w| w != s.phase);
-        let target = match starving {
-            Some((p, _)) => Some(p),
-            None if wants_change => wanted,
-            None => None,
+        // A switch to the wanted phase commits its min green and a clearance
+        // before anything else; take it only if every other red phase, served
+        // after it in the same order, still makes max red. Otherwise serve the
+        // one red the longest (with two phases the wanted one is always it).
+        let fits = |w: usize| {
+            queue.iter().filter(|&&(p, _)| p != w).enumerate().all(|(k, &(_, since))| {
+                free_at + timing.clearance_s() + (k + 1) as f64 * slot - since < timing.max_red_s
+            })
+        };
+        let target = match (starving, wanted) {
+            (Some(&(p, _)), _) => Some(p),
+            (None, Some(w)) if wants_change && fits(w) => Some(w),
+            (None, Some(_)) if wants_change => queue.first().map(|&(p, _)| p),
+            _ => None,
         };
 
         if let Some(target) = target {
@@ -281,6 +317,89 @@ mod tests {
                 assert!(longest_red(&cmds, phase) as f64 <= TIMING.max_red_s, "seed {seed} phase {phase}");
             }
         }
+    }
+
+    fn drive_n(
+        n: usize,
+        timing: SignalTiming,
+        mut request_at: impl FnMut() -> Option<usize>,
+        seconds: usize,
+    ) -> Vec<Command> {
+        let mut env = SafetyEnvelope::new(&[("J".into(), n)], timing, "test").unwrap();
+        (0..seconds)
+            .map(|t| {
+                let req: BTreeMap<String, usize> = request_at().map(|p| ("J".to_string(), p)).into_iter().collect();
+                env.step(t as f64, &req).remove(0)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn max_red_holds_with_four_phases_when_the_controller_never_lets_go() {
+        // three red phases fall due together; each must still be served within max red
+        let cmds = drive_n(4, TIMING, || Some(0), 1200);
+        for phase in 1..4 {
+            assert!(longest_red(&cmds, phase) as f64 <= TIMING.max_red_s, "phase {phase}: {}", longest_red(&cmds, phase));
+        }
+    }
+
+    #[test]
+    fn max_red_holds_for_more_phases_at_the_tightest_valid_max_red() {
+        for n in 3..=5 {
+            let timing = SignalTiming { max_red_s: TIMING.worst_red_s(n), ..TIMING };
+            for seed in 1..20u64 {
+                let mut rng = Rng(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1);
+                let cmds = drive_n(n, timing, move || (rng.next() % (n as u64 + 1)).try_into().ok().filter(|&p| p < n), 3000);
+                for phase in 0..n {
+                    let red = longest_red(&cmds, phase) as f64;
+                    assert!(red <= timing.max_red_s, "{n} phases, seed {seed}, phase {phase}: red {red}");
+                }
+            }
+            let always_first = drive_n(n, timing, || Some(0), 2000);
+            for phase in 1..n {
+                assert!(longest_red(&always_first, phase) as f64 <= timing.max_red_s, "{n} phases, phase {phase}");
+            }
+        }
+    }
+
+    #[test]
+    fn max_red_holds_when_the_controller_keeps_choosing_other_phases() {
+        // A controller that only ever wants the main road (0 and 1, whichever is not
+        // green) and never the side streets: a voluntary switch to 0 or 1 must not
+        // be taken when it would push a waiting side street past max red.
+        for (max_red, n) in [(60.0, 4), (90.0, 4), (90.0, 3), (75.0, 5)] {
+            let timing = SignalTiming { max_red_s: max_red, ..TIMING };
+            let mut env = SafetyEnvelope::new(&[("J".into(), n)], timing, "test").unwrap();
+            let mut cmds: Vec<Command> = Vec::new();
+            for t in 0..4000 {
+                let want = match cmds.last() {
+                    Some(c) if c.phase_index == 0 => 1,
+                    _ => 0,
+                };
+                cmds.push(env.step(t as f64, &BTreeMap::from([("J".to_string(), want)])).remove(0));
+            }
+            for phase in 0..n {
+                let red = longest_red(&cmds, phase) as f64;
+                assert!(red <= max_red, "max red {max_red}, {n} phases, phase {phase}: red {red}");
+            }
+            for seed in 1..30u64 {
+                let mut rng = Rng(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1);
+                let cmds = drive_n(n, timing, move || Some((rng.next() % n as u64) as usize), 3000);
+                for phase in 0..n {
+                    let red = longest_red(&cmds, phase) as f64;
+                    assert!(red <= max_red, "max red {max_red}, {n} phases, seed {seed}, phase {phase}: red {red}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn max_red_must_leave_room_for_every_phase() {
+        // 4 phases: all-red 2 + 3 x (min green 10 + clearance 5) = 47 s
+        assert_eq!(TIMING.worst_red_s(4), 47.0);
+        let short = SignalTiming { max_red_s: 46.0, ..TIMING };
+        assert!(SafetyEnvelope::new(&[("J".into(), 4)], short, "t").is_err());
+        assert!(SafetyEnvelope::new(&[("J".into(), 2)], short, "t").is_ok());
     }
 
     #[test]
