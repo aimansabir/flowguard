@@ -815,11 +815,113 @@
                   "type": "null"
                 }
               ]
+            },
+            "lane_weight": {
+              "description": "Multiply each approach's pressure term by its number of lanes, the\ncapacity weight of Varaiya's formula (D33). Off unless true.",
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "moving_count": {
+              "description": "Count moving vehicles too: a running count per approach,\nn = max(queue_estimate, n_previous + arrivals_pcu - departures_pcu),\nused instead of the standing queue (D33). Off unless true.",
+              "type": [
+                "boolean",
+                "null"
+              ]
             }
           },
           "additionalProperties": false,
           "required": [
             "kind"
+          ]
+        },
+        {
+          "title": "ActuatedControllerConfig",
+          "description": "Fully actuated control (D34): phases in a fixed order; after min green\na green is extended while one of its approaches had arrivals within\n`gap_s`, up to its max green; a phase with no vehicle waiting is\nskipped.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "actuated"
+            },
+            "max_green_s": {
+              "description": "Longest green per phase, s (phase order).",
+              "type": "array",
+              "items": {
+                "type": "number",
+                "format": "double"
+              }
+            },
+            "gap_s": {
+              "description": "Gap-out: a green ends once no PCU has entered its camera zone for\nthis long, s.",
+              "type": "number",
+              "format": "double"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "max_green_s",
+            "gap_s"
+          ]
+        },
+        {
+          "title": "AdaptiveSplitControllerConfig",
+          "description": "Fixed-time plan whose splits are re-computed from measured arrival\nrates (D35): same cycle and offsets as the plan it starts from; every\n`update_s` the greens are re-split with Webster's formula, each moving\nat most `max_step_s`, never below min green. New splits start at the\nnext cycle of each junction.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "adaptive_split"
+            },
+            "green_s": {
+              "description": "Starting greens per phase, s; their sum fixes the cycle.",
+              "type": "array",
+              "items": {
+                "type": "number",
+                "format": "double"
+              }
+            },
+            "offsets_s": {
+              "type": [
+                "object",
+                "null"
+              ],
+              "additionalProperties": {
+                "type": "number",
+                "format": "double"
+              }
+            },
+            "update_s": {
+              "description": "Seconds between re-splits.",
+              "type": "number",
+              "format": "double"
+            },
+            "window_s": {
+              "description": "Seconds of arrivals a rate is measured over.",
+              "type": "number",
+              "format": "double"
+            },
+            "max_step_s": {
+              "description": "Largest change of one green per re-split, s.",
+              "type": "number",
+              "format": "double"
+            },
+            "saturation_pcu_per_h_per_lane": {
+              "description": "Saturation flow per lane, PCU/h (as config/webster.json).",
+              "type": "number",
+              "format": "double"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "green_s",
+            "update_s",
+            "window_s",
+            "max_step_s",
+            "saturation_pcu_per_h_per_lane"
           ]
         }
       ]

@@ -33,6 +33,14 @@ use crate::error::{Error, Result};
 /// switch costs a clearance, so a green is not cut while its queue still
 /// discharges. The envelope's max red overrides it as it overrides any wish.
 ///
+/// With lane_weight (D33) each approach's term is multiplied by its lanes:
+/// the capacity weight of Varaiya's formula, so a 2-lane approach that
+/// discharges twice as fast counts twice. With moving_count (D33) the queue
+/// of an approach is a running count of the vehicles in its camera zone,
+/// moving or not: n = max(queue_estimate, n_previous + arrivals - departures),
+/// because a camera's standing queue drops as soon as a served queue starts
+/// to move. Both are off unless asked for, and then the name says so.
+///
 /// Known simplification (next work, see docs/specs/control.md): turning
 /// traffic is not split out; downstream is the straight-through approach.
 pub struct MaxPressure {
@@ -44,8 +52,11 @@ pub struct MaxPressure {
     storage: Vec<f64>,
     min_green_s: f64,
     serve_queue: Option<ServeQueue>,
-    /// Approach index -> lanes, for serve_queue.
+    /// Approach index -> lanes, for serve_queue and lane_weight.
     lanes: Vec<f64>,
+    lane_weight: bool,
+    /// Approach index -> running count (PCU), Some with moving_count.
+    counts: Option<Vec<f64>>,
 }
 
 impl MaxPressure {
@@ -77,7 +88,17 @@ impl MaxPressure {
             name.push_str("_cap");
         }
         let lanes = corridor.corridor.approaches.iter().map(|a| f64::from(a.lanes)).collect();
-        Ok(MaxPressure { name, hysteresis, capacity, storage, min_green_s, serve_queue: None, lanes })
+        Ok(MaxPressure {
+            name,
+            hysteresis,
+            capacity,
+            storage,
+            min_green_s,
+            serve_queue: None,
+            lanes,
+            lane_weight: false,
+            counts: None,
+        })
     }
 
     /// Adds the actuated extension (None leaves the controller as it is).
@@ -96,6 +117,36 @@ impl MaxPressure {
         Ok(self)
     }
 
+    /// Adds the D33 options (both false leaves the controller as it is).
+    pub fn counting(mut self, lane_weight: bool, moving_count: bool) -> Self {
+        if lane_weight {
+            self.name.push_str("_lanes");
+        }
+        if moving_count {
+            self.name.push_str("_moving");
+        }
+        self.lane_weight = lane_weight;
+        self.counts = moving_count.then(|| vec![0.0; self.lanes.len()]);
+        self
+    }
+
+    /// Queue the pressure uses: the running count with moving_count, else
+    /// the Guard estimate.
+    fn q(&self, input: &DecisionInput<'_>, a: usize) -> f64 {
+        self.counts.as_ref().map_or_else(|| input.queue(a), |c| c[a])
+    }
+
+    fn update_counts(&mut self, input: &DecisionInput<'_>) {
+        let Some(counts) = self.counts.as_mut() else { return };
+        for (a, n) in counts.iter_mut().enumerate() {
+            let q = input.queue(a);
+            *n = match &input.states[a] {
+                Some(s) => q.max(*n + s.arrivals_pcu - s.departures_pcu),
+                None => q.max(*n),
+            };
+        }
+    }
+
     /// True while the current settled green should be kept for its queue.
     fn still_serving(&self, input: &DecisionInput<'_>, j: usize, last: Option<&Command>) -> bool {
         let (Some(q), Some(c)) = (self.serve_queue, last) else { return false };
@@ -104,17 +155,22 @@ impl MaxPressure {
             && input.t - c.phase_started_at < q.max_green_s
             && input.corridor.phases[j][c.target_phase]
                 .iter()
-                .any(|&a| self.term(input, a) > 0.0 && input.queue(a) >= q.hold_pcu_per_lane * self.lanes[a])
+                .any(|&a| self.term(input, a) > 0.0 && self.q(input, a) >= q.hold_pcu_per_lane * self.lanes[a])
     }
 
     /// Pressure term of one approach.
     fn term(&self, input: &DecisionInput<'_>, a: usize) -> f64 {
-        let Some(d) = input.corridor.downstream[a] else { return input.queue(a) };
-        let diff = input.queue(a) - input.queue(d);
-        match self.capacity {
-            Some(c) if input.queue(d) >= c.spillback_occupancy * self.storage[d] => diff.min(0.0),
-            _ => diff,
-        }
+        let term = match input.corridor.downstream[a] {
+            None => self.q(input, a),
+            Some(d) => {
+                let diff = self.q(input, a) - self.q(input, d);
+                match self.capacity {
+                    Some(c) if self.q(input, d) >= c.spillback_occupancy * self.storage[d] => diff.min(0.0),
+                    _ => diff,
+                }
+            }
+        };
+        if self.lane_weight { term * self.lanes[a] } else { term }
     }
 
     /// True while the current green must not be given up: a change is under
@@ -133,6 +189,7 @@ impl Controller for MaxPressure {
     }
 
     fn decide(&mut self, input: &DecisionInput<'_>) -> BTreeMap<String, usize> {
+        self.update_counts(input);
         let ix = input.corridor;
         let mut requests = BTreeMap::new();
         for (j, junction) in ix.corridor.junctions.iter().enumerate() {
@@ -361,6 +418,60 @@ mod tests {
         // b_w leaves the corridor: no downstream, no gate
         let r = decide_with(&mut cap(0.1), 0.0, [0.0, 0.0, 50.0, 3.0], [None, None]);
         assert_eq!(r["B"], 0);
+    }
+
+    #[test]
+    fn lane_weight_counts_two_lanes_twice() {
+        // a_w (2 lanes) 4 PCU vs a_n (1 lane) 6 PCU: plain picks a_n, lane-weighted a_w (8 > 6)
+        let mut ix_c = two_junctions();
+        ix_c.approaches[1].lanes = 1;
+        let ix = CorridorIndex::new(ix_c).unwrap();
+        let states = [state("a_w", 4.0), state("a_n", 6.0), state("b_w", 0.0), state("b_n", 0.0)];
+        let last = [None, None];
+        let input = DecisionInput { t: 0.0, corridor: &ix, states: &states, last_commands: &last };
+        let mut plain = MaxPressure::new(&ix, None, None, 10.0).unwrap();
+        assert_eq!(plain.decide(&input)["A"], 1);
+        let mut weighted = MaxPressure::new(&ix, None, None, 10.0).unwrap().counting(true, false);
+        assert_eq!(weighted.name(), "maxpressure_lanes");
+        assert_eq!(weighted.decide(&input)["A"], 0); // 4 x 2 = 8 > 6 x 1
+    }
+
+    fn flow(id: &str, q: f64, arr: f64, dep: f64) -> Option<ApproachState> {
+        let mut s = state(id, q);
+        if let Some(s) = s.as_mut() {
+            s.arrivals_pcu = arr;
+            s.departures_pcu = dep;
+        }
+        s
+    }
+
+    #[test]
+    fn moving_count_keeps_a_moving_queue() {
+        let mut mp = MaxPressure::new(&ix(), None, None, 10.0).unwrap().counting(false, true);
+        assert_eq!(mp.name(), "maxpressure_moving");
+        let ix = ix();
+        let last = [None, None];
+        let run = |mp: &mut MaxPressure, s: [Option<ApproachState>; 4]| {
+            mp.decide(&DecisionInput { t: 0.0, corridor: &ix, states: &s, last_commands: &last })
+        };
+        // 10 PCU queue on a_w, all stopped
+        run(&mut mp, [flow("a_w", 10.0, 10.0, 0.0), flow("a_n", 0.0, 0.0, 0.0), state("b_w", 0.0), state("b_n", 0.0)]);
+        assert_eq!(mp.counts.as_ref().unwrap()[0], 10.0);
+        // green: the queue moves, the camera sees 1 standing, 2 PCU left the zone
+        run(&mut mp, [flow("a_w", 1.0, 0.0, 2.0), flow("a_n", 5.0, 5.0, 0.0), state("b_w", 0.0), state("b_n", 0.0)]);
+        assert_eq!(mp.counts.as_ref().unwrap()[0], 8.0); // 8 still to serve, not 1
+        // never below the standing queue
+        run(&mut mp, [flow("a_w", 9.0, 0.0, 8.0), flow("a_n", 5.0, 0.0, 0.0), state("b_w", 0.0), state("b_n", 0.0)]);
+        assert_eq!(mp.counts.as_ref().unwrap()[0], 9.0);
+    }
+
+    #[test]
+    fn options_off_change_nothing() {
+        let queues = [7.0, 3.0, 2.0, 0.0];
+        let a = decide_with(&mut basic(), 0.0, queues, [None, None]);
+        let b = decide_with(&mut basic().counting(false, false), 0.0, queues, [None, None]);
+        assert_eq!(a, b);
+        assert_eq!(basic().counting(false, false).name(), "maxpressure");
     }
 
     #[test]

@@ -404,6 +404,47 @@ pub enum ControllerConfig {
         capacity: Option<Capacity>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         serve_queue: Option<ServeQueue>,
+        /// Multiply each approach's pressure term by its number of lanes, the
+        /// capacity weight of Varaiya's formula (D33). Off unless true.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        lane_weight: Option<bool>,
+        /// Count moving vehicles too: a running count per approach,
+        /// n = max(queue_estimate, n_previous + arrivals_pcu - departures_pcu),
+        /// used instead of the standing queue (D33). Off unless true.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        moving_count: Option<bool>,
+    },
+    /// Fully actuated control (D34): phases in a fixed order; after min green
+    /// a green is extended while one of its approaches had arrivals within
+    /// `gap_s`, up to its max green; a phase with no vehicle waiting is
+    /// skipped.
+    #[schemars(title = "ActuatedControllerConfig")]
+    Actuated {
+        /// Longest green per phase, s (phase order).
+        max_green_s: Vec<f64>,
+        /// Gap-out: a green ends once no PCU has entered its camera zone for
+        /// this long, s.
+        gap_s: f64,
+    },
+    /// Fixed-time plan whose splits are re-computed from measured arrival
+    /// rates (D35): same cycle and offsets as the plan it starts from; every
+    /// `update_s` the greens are re-split with Webster's formula, each moving
+    /// at most `max_step_s`, never below min green. New splits start at the
+    /// next cycle of each junction.
+    #[schemars(title = "AdaptiveSplitControllerConfig")]
+    AdaptiveSplit {
+        /// Starting greens per phase, s; their sum fixes the cycle.
+        green_s: Vec<f64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        offsets_s: Option<BTreeMap<String, f64>>,
+        /// Seconds between re-splits.
+        update_s: f64,
+        /// Seconds of arrivals a rate is measured over.
+        window_s: f64,
+        /// Largest change of one green per re-split, s.
+        max_step_s: f64,
+        /// Saturation flow per lane, PCU/h (as config/webster.json).
+        saturation_pcu_per_h_per_lane: f64,
     },
 }
 
@@ -789,10 +830,10 @@ mod tests {
         assert_eq!(f, ControllerConfig::Fixed { green_s: vec![40.0, 20.0], offsets_s: None });
         assert_eq!(serde_json::to_string(&f).unwrap(), r#"{"kind":"fixed","green_s":[40.0,20.0]}"#);
         let m: ControllerConfig = serde_json::from_str(r#"{"kind":"maxpressure"}"#).unwrap();
-        assert_eq!(m, ControllerConfig::MaxPressure { hysteresis: None, capacity: None, serve_queue: None });
+        assert_eq!(m, ControllerConfig::MaxPressure { hysteresis: None, capacity: None, serve_queue: None, lane_weight: None, moving_count: None });
         let h: ControllerConfig =
             serde_json::from_str(r#"{"kind":"maxpressure","hysteresis":{"gain_pcu":2}}"#).unwrap();
-        assert_eq!(h, ControllerConfig::MaxPressure { hysteresis: Some(Hysteresis { gain_pcu: 2.0 }), capacity: None, serve_queue: None });
+        assert_eq!(h, ControllerConfig::MaxPressure { hysteresis: Some(Hysteresis { gain_pcu: 2.0 }), capacity: None, serve_queue: None, lane_weight: None, moving_count: None });
         assert_eq!(serde_json::to_string(&m).unwrap(), r#"{"kind":"maxpressure"}"#);
     }
 

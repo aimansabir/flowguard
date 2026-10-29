@@ -43,7 +43,8 @@ from flowguard_sim.signals import SignalApplier
 from flowguard_sim.sumo_env import sumo_binary
 
 CONTROLLERS = ("fixed", "fixed_webster", "fixed_webster_wave",
-               "maxpressure", "maxpressure_hyst", "maxpressure_hyst_cap", "maxpressure_hyst_cap_serve")
+               "maxpressure", "maxpressure_hyst", "maxpressure_hyst_cap", "maxpressure_hyst_cap_serve",
+               "maxpressure_hyst_cap_lanes_moving", "actuated", "adaptive_split")
 GUARDS = ("passthrough", "v1")
 LOGS = ("truth", "measurements", "states", "commands")
 FROM_CONFIG: Literal["config"] = "config"
@@ -68,6 +69,20 @@ def core_config(controller: str, guard: str = "passthrough") -> CoreConfig:
     elif controller == "maxpressure_hyst_cap_serve":
         ctl = {"kind": "maxpressure", "hysteresis": mp["hysteresis"], "capacity": mp["capacity"],
                "serve_queue": mp["serve_queue"]}
+    elif controller == "maxpressure_hyst_cap_lanes_moving":  # D33
+        ctl = {"kind": "maxpressure", "hysteresis": mp["hysteresis"], "capacity": mp["capacity"],
+               "lane_weight": True, "moving_count": True}
+    elif controller == "actuated":  # D34: max green from the fair fixed plan
+        act = load_json("config/actuated.json")
+        greens = webster.plan(green_wave=True)["green_s"]
+        ctl = {"kind": "actuated", "gap_s": act["gap_s"],
+               "max_green_s": [act["max_green_factor"] * g for g in greens]}
+    elif controller == "adaptive_split":  # D35: starts from the fair fixed plan
+        split = without_notes(load_json("config/adaptive_split.json"))
+        plan = webster.plan(green_wave=True)
+        sat = load_json("config/webster.json")["saturation_pcu_per_h_per_lane"]
+        ctl = {"kind": "adaptive_split", "green_s": plan["green_s"], "offsets_s": plan.get("offsets_s"),
+               "saturation_pcu_per_h_per_lane": sat, **split}
     else:
         raise ValueError(f"unknown controller {controller!r}")
     return CoreConfig.model_validate({

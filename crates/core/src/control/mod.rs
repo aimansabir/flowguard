@@ -4,11 +4,15 @@
 //! To add a controller: implement `Controller`, add a variant to
 //! `ControllerConfig` (contracts.rs), and map it in `make_controller`.
 
+mod actuated;
+mod adaptive_split;
 mod fixed;
 mod maxpressure;
 
 use std::collections::BTreeMap;
 
+pub use actuated::Actuated;
+pub use adaptive_split::AdaptiveSplit;
 pub use fixed::FixedTime;
 pub use maxpressure::MaxPressure;
 
@@ -49,8 +53,30 @@ pub fn make_controller(
         ControllerConfig::Fixed { green_s, offsets_s } => {
             Box::new(FixedTime::new(corridor, green_s, &offsets_s.clone().unwrap_or_default(), timing.clearance_s())?)
         }
-        ControllerConfig::MaxPressure { hysteresis, capacity, serve_queue } => {
-            Box::new(MaxPressure::new(corridor, *hysteresis, *capacity, timing.min_green_s)?.serving(*serve_queue)?)
+        ControllerConfig::MaxPressure { hysteresis, capacity, serve_queue, lane_weight, moving_count } => Box::new(
+            MaxPressure::new(corridor, *hysteresis, *capacity, timing.min_green_s)?
+                .serving(*serve_queue)?
+                .counting(lane_weight.unwrap_or(false), moving_count.unwrap_or(false)),
+        ),
+        ControllerConfig::Actuated { max_green_s, gap_s } => {
+            Box::new(Actuated::new(corridor, max_green_s, *gap_s, timing.min_green_s)?)
         }
+        ControllerConfig::AdaptiveSplit {
+            green_s,
+            offsets_s,
+            update_s,
+            window_s,
+            max_step_s,
+            saturation_pcu_per_h_per_lane,
+        } => Box::new(AdaptiveSplit::new(
+            corridor,
+            green_s,
+            &offsets_s.clone().unwrap_or_default(),
+            timing,
+            *update_s,
+            *window_s,
+            *max_step_s,
+            *saturation_pcu_per_h_per_lane,
+        )?),
     })
 }

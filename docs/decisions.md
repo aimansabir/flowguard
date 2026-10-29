@@ -947,3 +947,116 @@ together (they do not conflict in left-hand traffic, checkable with the
 same conflict matrix), then a protected right-turn phase, then the side
 streets. Not implemented here; exclusive phasing is what was asked for and
 is what this decision records.
+
+## D33. Max-pressure options: lane weight and moving count (2026-10-29)
+Two opt-in options on the existing max-pressure (`lane_weight`,
+`moving_count` in `ControllerConfig::MaxPressure`, both off unless true);
+`--controller maxpressure_hyst_cap_lanes_moving` is D22's
+`maxpressure_hyst_cap` with both on. Every existing variant is unchanged:
+its config leaves both out, and a seed-1 run of `maxpressure_hyst_cap` and
+`fixed_webster_wave` on this code produced `commands.jsonl` byte-identical to
+the same run in the unmodified image (D36).
+
+- **Why.** Diagnosis of the D32 runs: under exclusive phases max-pressure ends
+  almost every green at min green (median green 10 s against Webster's 30 s;
+  31 % of the time in yellow + all-red against 19 %). The queue it compares
+  is the camera's *standing* queue, and the served approach's standing queue
+  collapses as soon as its vehicles start to move, while the waiting
+  approaches' grow; after min green a rival always leads by more than the
+  8 PCU hysteresis gain.
+- **lane_weight.** Each approach's pressure term (after the spillback gate)
+  is multiplied by its lanes: the capacity (saturation-flow) weight of
+  Varaiya's formula, with saturation flow per lane taken as equal. A 2-lane
+  main road discharges about twice as fast as a 1-lane side street.
+- **moving_count.** A running count per approach inside the controller,
+  `n = max(queue_estimate, n_previous + arrivals_pcu - departures_pcu)`: the
+  PCU in the camera zone, moving or not, never below the standing queue. It
+  replaces the standing queue in every pressure term. Limits: it can only
+  drift upward between standing-queue resets (a vehicle teleported out of
+  SUMO never departs), and it still sees only the 60 m zone.
+- Parameters: none new. Hysteresis gain and spillback gate as D20/D22.
+- Tests: `control/maxpressure.rs` (lane weight flips a choice, the running
+  count keeps a moving queue and never drops below the standing queue,
+  options off change nothing).
+
+## D34. Actuated controller (2026-10-29)
+`ControllerConfig::Actuated` (`control/actuated.rs`), `--controller actuated`,
+config `config/actuated.json`. After FHWA's actuated signal control (Signal
+Timing Manual ch. 5): phases are served in their fixed order (west, east,
+north, south at every junction, D32). A green runs min green (the
+envelope's 10 s), is then extended while one of its approaches had PCU
+entering the camera zone within the last `gap_s` (the 60 m zone acts as the
+detector), and ends on gap-out or when it reaches its max green. The next
+phase is the next one in order with a vehicle waiting (a standing queue or
+an arrival this second); phases with none are skipped, and with none
+anywhere the green rests. The envelope's max red still overrides any wish,
+and the order then carries on from whatever phase it served.
+
+Parameters, fixed before any run and not tuned:
+- `gap_s` = 3 s: FHWA's maximum allowable headway without gap reduction
+  (3.0 s).
+- max green = 1.5 x the phase's green in `fixed_webster_wave` (31, 31, 10,
+  10 s -> 46.5, 46.5, 15, 15 s): FHWA gives 1.25-1.5 x the optimal pretimed
+  green; the upper end because every switch costs a 5 s clearance with four
+  phases.
+Tests: extend on arrivals and gap-out, max-out, skip and rest, validation.
+
+## D35. Adaptive split controller (2026-10-29)
+`ControllerConfig::AdaptiveSplit` (`control/adaptive_split.rs`),
+`--controller adaptive_split`, config `config/adaptive_split.json`. Starts
+from the `fixed_webster_wave` plan and keeps its cycle (102 s) and green-wave
+offsets, so the corridor stays coordinated. Every `update_s` the greens are
+re-split with Webster's split formula (as `webster.py`): flow ratio of phase
+k = the highest arrival rate per lane / saturation flow over the phase's
+approaches at all junctions (one plan for all, like the fixed plan); target
+green_k = total green x y_k / sum(y). Each green moves at most `max_step_s`
+toward its target, never below min green, in whole seconds, and the greens
+are then balanced so their sum, and the cycle, does not change. A split
+whose reds would pass max red is not used. A junction takes a new split
+when its own cycle starts again, never mid-cycle.
+
+Rates: PCU entering the camera zone over the last `window_s`, counting only
+seconds the approach was TRUSTED; an approach that is not TRUSTED at an
+update keeps its last trusted rate; until every approach has a rate the
+plan does not change. Limit: a full camera zone admits only what the queue
+moves up, so on a saturated approach the measured "arrival" rate is the
+served flow, not the demand; the split then follows service, not demand.
+
+Parameters, fixed before any run and not tuned: `update_s` 300 s,
+`window_s` 600 s, `max_step_s` 3 s (re-split every 5 minutes over 10 minutes
+of data, a green moving at most 3 s at a time, so noise cannot swing the
+plan); saturation flow 1800 PCU/h per lane as `config/webster.json`.
+Tests: the re-split keeps the cycle and limits each step, a new split waits
+for the next cycle, an untrusted approach keeps its last rate, validation.
+
+## D36. How the adaptive controllers were tested (2026-10-29)
+- **Fair baseline.** Every controller is compared with `fixed_webster_wave`
+  (D21: Webster plan 31/31/10/10 s, cycle 102 s, green-wave offsets), tuned on
+  normal demand and used unchanged in every scenario, as a city would run one
+  plan. It is never re-tuned per scenario.
+- **Reproduction first.** The unmodified image (`ee21c95`) reproduces D32 to
+  the decimal: Guard v1, seeds 1-2, `fixed_webster` 316.4 s / 2782.5 veh/h,
+  `maxpressure_hyst_cap` 352.4 s / 2296.5 veh/h (D32: 316 s and 352 s).
+  `fixed_webster_wave` is not in D32; its seed-1 passthrough run (316.6 s,
+  2858 veh/h) is the reference here.
+- **Existing controllers unchanged.** On seed 1, normal demand, `commands`,
+  `states` and `measurements` logs of `fixed_webster_wave` and
+  `maxpressure_hyst_cap` from this code are byte-identical (sha256) to those
+  from the unmodified image.
+- **No tuning.** Every parameter of D33-D35 was fixed before the first run,
+  from the sources named there. Nothing was tuned, so the tuning seed (9)
+  was never needed; seeds 1-3 are all reported.
+- **Serviceable scenario, a modelling choice.** Normal demand has a Webster
+  flow ratio Y = 1.06: above what four exclusive phases can serve, so every
+  controller only fails more or less slowly. `config/demand_scenarios/
+  serviceable.json` scales every entry by 0.8, giving Y = 0.85. It is not
+  observed demand; it shows how the controllers compare when the corridor
+  is not over capacity.
+- **Metrics.** Average delay is SUMO's timeLoss per arrived vehicle; it does
+  not include the wait to enter the network, so that is reported beside it
+  ("entry wait"): a controller that blocks the corridor entries can look
+  better on timeLoss alone. Also throughput, vehicles still in the network
+  at the end, longest red. Mean ± sample standard deviation over 3 seeds,
+  and the paired difference with the baseline on the same seed (same
+  vehicles). Three seeds show direction, not significance.
+- Commands: docs/results.md, 2026-10-29.

@@ -1,0 +1,5 @@
+{
+  "_note": "Actuated controller (docs/decisions.md D34), --controller actuated. Chosen before any run, not tuned. gap_s: FHWA Signal Timing Manual, maximum allowable headway 3.0 s without gap reduction (passage time). max_green_factor: max green per phase = this x the Webster green of fixed_webster_wave (FHWA: 1.25-1.5 x the optimal pretimed green; the upper end, because with exclusive phases every switch costs a clearance). Min green is the envelope's (config/signal.json).",
+  "gap_s": 3.0,
+  "max_green_factor": 1.5
+}

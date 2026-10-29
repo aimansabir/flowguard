@@ -1,0 +1,5 @@
+{
+  "_note": "MODELLING CHOICE, not observed demand: every entry 0.8 x config/demand.json (same turning shares, class mix and peak), chosen so that the Webster sum of critical flow ratios is Y = 0.85 (normal demand: 1.06). It is the demand four exclusive phases can serve with a fixed plan, used to compare controllers where the corridor is not over capacity (D36). Synthetic.",
+  "main_veh_per_h": 720,
+  "side_veh_per_h": 120
+}

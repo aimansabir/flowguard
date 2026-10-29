@@ -1,0 +1,6 @@
+{
+  "_note": "Adaptive split controller (docs/decisions.md D35), --controller adaptive_split. Starts from the fixed_webster_wave plan (cycle and offsets kept). Chosen before any run, not tuned: update_s 300 s (re-split every 5 minutes) over window_s 600 s of measured arrivals, each green moving at most max_step_s 3 s per update, so a plan moves slowly and a few minutes of noise cannot swing it. Saturation flow is config/webster.json's.",
+  "update_s": 300,
+  "window_s": 600,
+  "max_step_s": 3
+}

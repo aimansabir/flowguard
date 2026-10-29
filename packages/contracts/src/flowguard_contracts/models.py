@@ -161,6 +161,65 @@ class FixedControllerConfig(BaseModel):
     offsets_s: dict[str, Any] | None = None
 
 
+class ActuatedControllerConfig(BaseModel):
+    """
+    Fully actuated control (D34): phases in a fixed order; after min green
+    a green is extended while one of its approaches had arrivals within
+    `gap_s`, up to its max green; a phase with no vehicle waiting is
+    skipped.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    kind: Literal["actuated"]
+    max_green_s: list[float]
+    """
+    Longest green per phase, s (phase order).
+    """
+    gap_s: float
+    """
+    Gap-out: a green ends once no PCU has entered its camera zone for
+    this long, s.
+    """
+
+
+class AdaptiveSplitControllerConfig(BaseModel):
+    """
+    Fixed-time plan whose splits are re-computed from measured arrival
+    rates (D35): same cycle and offsets as the plan it starts from; every
+    `update_s` the greens are re-split with Webster's formula, each moving
+    at most `max_step_s`, never below min green. New splits start at the
+    next cycle of each junction.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    kind: Literal["adaptive_split"]
+    green_s: list[float]
+    """
+    Starting greens per phase, s; their sum fixes the cycle.
+    """
+    offsets_s: dict[str, Any] | None = None
+    update_s: float
+    """
+    Seconds between re-splits.
+    """
+    window_s: float
+    """
+    Seconds of arrivals a rate is measured over.
+    """
+    max_step_s: float
+    """
+    Largest change of one green per re-split, s.
+    """
+    saturation_pcu_per_h_per_lane: float
+    """
+    Saturation flow per lane, PCU/h (as config/webster.json).
+    """
+
+
 class Hysteresis(BaseModel):
     """
     Switching damper for max-pressure.
@@ -603,6 +662,17 @@ class MaxPressureControllerConfig(BaseModel):
     hysteresis: Hysteresis | None = None
     capacity: Capacity | None = None
     serve_queue: ServeQueue | None = None
+    lane_weight: bool | None = None
+    """
+    Multiply each approach's pressure term by its number of lanes, the
+    capacity weight of Varaiya's formula (D33). Off unless true.
+    """
+    moving_count: bool | None = None
+    """
+    Count moving vehicles too: a running count per approach,
+    n = max(queue_estimate, n_previous + arrivals_pcu - departures_pcu),
+    used instead of the standing queue (D33). Off unless true.
+    """
 
 
 class ResponseEvidence(BaseModel):
@@ -876,7 +946,12 @@ class CoreConfig(BaseModel):
     )
     pcu: PcuWeights
     timing: SignalTiming
-    controller: FixedControllerConfig | MaxPressureControllerConfig
+    controller: (
+        FixedControllerConfig
+        | MaxPressureControllerConfig
+        | ActuatedControllerConfig
+        | AdaptiveSplitControllerConfig
+    )
     guard: Annotated[
         PassthroughGuardConfig | GuardV1Config | None, Field(validate_default=True)
     ] = {"kind": "passthrough"}
