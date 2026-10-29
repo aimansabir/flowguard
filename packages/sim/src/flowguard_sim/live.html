@@ -313,10 +313,10 @@ code{font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;color:#cbd5
  <section class="page" id="p-vision">
   <div class="vleft">
    <div class="card">
-    <div class="vhead"><b id="vtitle">Camera</b><span class="dim">(simulated)</span><span id="vinj"></span>
-     <span class="r2"><span class="chip sim">SIMULATED CAMERA (SUMO)</span><span class="seg" id="vmode"><button data-m="cam" class="on">Camera view</button><button data-m="top">Top-down</button></span><select class="btn" id="vsel" aria-label="Camera"></select></span></div>
+    <div class="vhead"><b id="vtitle">Camera</b><span class="dim" id="vkind">(simulated)</span><span id="vinj"></span>
+     <span class="r2"><span class="chip sim" id="vchip">SIMULATED CAMERA (SUMO)</span><span class="seg" id="vmode"><button data-m="cam" class="on">Camera view</button><button data-m="top">Top-down</button></span><select class="btn" id="vsel" aria-label="Camera"></select></span></div>
     <div class="cv" id="zone"><canvas id="zonec"></canvas></div>
-    <div class="note" style="margin-top:8px">Rendered from SUMO vehicle positions, not video. Boxes mark the vehicles SUMO places in the 60 m camera zone (ground truth), not YOLO detections. Video, YOLO boxes and ByteTrack IDs appear only when Module 1's video pipeline supplies them.</div>
+    <div class="note" style="margin-top:8px" id="vnote">Rendered from SUMO vehicle positions, not video. Boxes mark the vehicles SUMO places in the 60 m camera zone (ground truth), not YOLO detections. Video, YOLO boxes and ByteTrack IDs appear only when Module 1's video pipeline supplies them.</div>
    </div>
    <div class="vrow">
     <div class="card"><h3>Camera zone statistics <span class="dim" style="font-weight:400">(last 60 m)</span><span class="r note">what the camera reported</span></h3><div class="tiles4" id="vtiles"></div></div>
@@ -621,10 +621,10 @@ function overview(){
  $("ovv-chip").innerHTML=missing.length?`<span class="chip warn">${missing.length} MISSING</span>`:'<span class="chip ok">ACTIVE</span>';
  $("ovv-n").innerHTML=`${veh} <small>vehicles</small>`;
  $("ovv-sub").innerHTML=`in all camera zones (this second)<br>${missing.length?`<span style="color:var(--badt)">no data: ${missing.join(", ")}</span>`:`${IDS.length} of ${IDS.length} cameras reporting`}`;
- $("ovv-src").textContent=sim?"SIMULATED CAMERA \u00B7 SUMO":"VIDEO PIPELINE";
+ $("ovv-src").textContent=!cams.length?"NO CAMERA DATA":sim?"SIMULATED CAMERA \u00B7 SUMO":cams.some(x=>x[1].src==="sim")?"SIMULATED + VIDEO PIPELINE":"VIDEO PIPELINE";
  const busy=cams.slice().sort((a,b)=>b[1].z-a[1].z)[0],[tg,TW,TH]=fit($("ovv-thumb"));
  if(busy){const e=edge(busy[0]),z=tail(e.lanes[0],60),m=z[Math.floor(z.length/2)];
-  drawScene(tg,view(TW,TH,m[0],m[1],Math.min(TW/64,TH/34)),f,{sel:busy[0]});$("ovv-tl").textContent=busy[0]+" zone \u00B7 SUMO view"}
+  drawScene(tg,view(TW,TH,m[0],m[1],Math.min(TW/64,TH/34)),f,{sel:busy[0]});$("ovv-tl").textContent=busy[0]+(f.veh?" zone \u00B7 SUMO view":" zone \u00B7 map only")}
  // guard
  const gc=guardCounts(f),w=worstCam(f);
  $("ovg").style.setProperty("--c",L.guard!=="v1"?"#94a3b8":w?TRC[w.tr]:"#22c55e");
@@ -759,12 +759,30 @@ function drawCamera(g,W,H,f,a){
  if(st.f){const t=`INJECTED FAULT: ${st.f.toUpperCase()}  ·  the camera's output is affected; this view shows SUMO's real traffic`;g.font=`700 12px ${F}`;const w=g.measureText(t).width+24;
   g.fillStyle="rgba(80,12,44,.9)";rr(g,W/2-w/2,48,w,28,8);g.fill();g.strokeStyle="#ec4899";g.lineWidth=1.2;g.stroke();g.fillStyle="#fbcfe8";g.fillText(t,W/2-w/2+12,66)}
  return counts}
+// where this approach's measurements come from: this second's, else the latest one before it
+function sourceOf(a){for(let i=S.view;i>=0&&i>S.view-600;i--){const c=S.F[i].app[a]&&S.F[i].app[a].cam;if(c)return c.src}return null}
+// a camera-source replay: the measurement file has counts and image health but no frames
+function drawNoVideo(g,W,H,f,a,st){
+ g.fillStyle="#070c16";g.fillRect(0,0,W,H);const F="Segoe UI,system-ui";
+ g.strokeStyle="rgba(148,163,184,.12)";g.lineWidth=1;g.setLineDash([6,6]);rr(g,24,52,W-48,H-100,12);g.stroke();g.setLineDash([]);
+ g.textAlign="center";g.fillStyle="#97a6bc";g.font=`600 15px ${F}`;g.fillText("Video frames are not part of this replay",W/2,H/2-14);
+ g.font=`13px ${F}`;g.fillStyle="#6b7b93";g.fillText("The counts, camera health and detector confidence on this screen come from the video pipeline (YOLO + ByteTrack).",W/2,H/2+12);
+ g.fillText("The measurement file holds per-second results only, so there is no picture or boxes to show.",W/2,H/2+32);g.textAlign="start";
+ g.font=`700 12px ${F}`;g.fillStyle="rgba(5,10,19,.72)";rr(g,12,12,250,26,7);g.fill();g.fillStyle="#60a5fa";g.beginPath();g.arc(26,25,4.5,0,7);g.fill();
+ g.fillStyle="#e7eef8";g.fillText(`CAM ${a} · video pipeline`,38,29);
+ const ts=`t = ${Math.round(f.t)} s`,tw=g.measureText(ts).width+20;g.fillStyle="rgba(5,10,19,.72)";rr(g,W-tw-12,12,tw,26,7);g.fill();g.fillStyle="#e7eef8";g.fillText(ts,W-tw-2,29);
+ if(st.miss){g.textAlign="center";g.font=`800 22px ${F}`;g.fillStyle="#f87171";g.fillText("NO MEASUREMENT THIS SECOND",W/2,H-70);g.textAlign="start"}}
 function vision(){
  const f=cur(),a=S.selA,s=f.app[a]||{},c=s.cam;$("vsel").value=a;
+ const srcA=sourceOf(a),video=srcA!=null&&srcA!=="sim";
  $("vtitle").textContent=`Camera: ${a}`;
+ $("vkind").textContent=video?"(video pipeline)":srcA==null?"(no measurements yet)":"(simulated)";
+ $("vchip").className="chip "+(video?"acc":"sim");$("vchip").textContent=video?"VIDEO PIPELINE (YOLO + BYTETRACK)":"SIMULATED CAMERA (SUMO)";
+ $("vnote").textContent=video?"Measurements from Module 1's video pipeline, replayed through the core. The replay carries per-second counts and camera health, not the video itself, so no frames or boxes are shown. The Top-down view draws the road layout only.":
+  "Rendered from SUMO vehicle positions, not video. Boxes mark the vehicles SUMO places in the 60 m camera zone (ground truth), not YOLO detections. Video, YOLO boxes and ByteTrack IDs appear only when Module 1's video pipeline supplies them.";
  $("vinj").innerHTML=s.f?`<span class="chip inj" title="experiment ground truth">INJECTED: ${esc(s.f).toUpperCase()}</span>`:"";
  const [g,W,H]=fit($("zonec"));let seen=null;
- if(S.vmode!=="top")seen=drawCamera(g,W,H,f,a);
+ if(S.vmode!=="top"){if(video)drawNoVideo(g,W,H,f,a,s);else seen=drawCamera(g,W,H,f,a)}
  else{const e=edge(a),z=tail(e.lanes[0],60),m=z[Math.floor(z.length/2)];drawScene(g,view(W,H,m[0],m[1],Math.min(W/140,H/75)),f,{sel:a});
   if(!f.veh){g.font="12.5px Segoe UI,system-ui";g.fillStyle="#97a6bc";g.fillText("Replay: vehicle positions were not recorded.",16,H-14)}}
  if(!f.veh)seen=null;
@@ -774,7 +792,7 @@ function vision(){
  $("vclasses").innerHTML=`<div class="det h"><span></span><span style="text-align:left">Class</span><span>Camera</span><span>${seen?"In view":""}</span></div>`+
   CLS.map((k,i)=>{const r=zc?zc[i]:null,v=seen?seen[i]:null;return `<div class="det"><span style="color:${CC[i]}">${VIC[i]}</span><span>${k[0].toUpperCase()+k.slice(1)}</span><span class="n ${r!=null&&v!=null&&r!==v?"diff":""}">${r==null?"–":r}</span><span class="n dim">${v==null?"":v}</span></div>`}).join("")+
   `<div class="det t"><span></span><span>Total</span><span class="n">${zc?sum(zc):"–"}</span><span class="n dim">${seen?sum(seen):""}</span></div>
-  <div class="note" style="margin-top:8px">Camera = what the simulated camera reported to the core. ${seen?"In view = vehicles SUMO places in the zone now (ground truth). They differ when a fault is injected, or by a vehicle at the zone edge.":""}</div>`;
+  <div class="note" style="margin-top:8px">Camera = what the ${video?"video pipeline":"simulated camera"} reported to the core. ${seen?"In view = vehicles SUMO places in the zone now (ground truth). They differ when a fault is injected, or by a vehicle at the zone edge.":""}</div>`;
  const T=[["In zone",c?c.z:"–"],["Stopped",c?c.qv:"–"],["Arrived",c?c.a:"–"],["Left (L/S/R)",c?c.d.join(" / "):"–"]];
  $("vtiles").innerHTML=T.map(([k,v])=>`<div class="tile"><div class="k">${k}</div><div class="v num">${v}</div></div>`).join("");
  $("vq").innerHTML=c&&!s.miss&&s.q!=null?`${pcu(s.q)} <small>PCU</small>`:"–";

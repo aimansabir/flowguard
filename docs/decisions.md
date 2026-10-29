@@ -819,6 +819,9 @@ Rules the page follows:
   its boxes are the vehicles SUMO places in the 60 m zone (ground truth),
   never presented as YOLO detections, and the panel beside it puts the
   camera's reported counts next to them, so an injected fault is visible.
+  When the measurements come from the video pipeline (a replay of its
+  JSONL), the labels say so and the view states that the file carries no
+  frames, instead of drawing the SUMO render.
 
 Research view: `GET /api/results` lists the run folders under `--results`
 (default `results/`), reading `summary.json`, and scores runs that have a
