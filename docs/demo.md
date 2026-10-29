@@ -41,7 +41,16 @@ Start-Process "http://127.0.0.1:8765/"
 The simulation waits until the page connects, then runs. In the header:
 play/pause (or the space bar), the speed selector (simulated seconds per
 second; at "max" a run goes as fast as SUMO and the core allow), the clock,
-and under it the timeline slider to scrub back with "Back to live" to return.
+and under it the timeline slider.
+
+Rewind and replay: drag the timeline slider back to any second (or click the
+Overview timeline, a Guard event or a decision-log entry) and every screen
+shows that moment. Press play there to watch it again from that point at the
+selected speed; the live simulation keeps running meanwhile, and "Back to
+live" returns to it. Once a run has finished, play replays it from the start.
+The replay uses the seconds the page has already received; it does not
+re-run SUMO. To run the same simulation again from scratch, start the same
+`docker run` command again: the same seed gives the same traffic.
 
 Other runs (stop the previous one first):
 

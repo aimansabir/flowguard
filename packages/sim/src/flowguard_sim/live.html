@@ -1117,10 +1117,19 @@ addEventListener("hashchange",route);
 document.querySelectorAll("[data-go]").forEach(x=>x.addEventListener("click",()=>go(x.dataset.go)));
 function seekTo(i){S.view=Math.max(0,Math.min(S.F.length-1,i));S.follow=S.view===S.F.length-1;schedule()}
 const post=o=>fetch("/control",{method:"POST",body:JSON.stringify(o)}).catch(()=>{});
-$("play").onclick=()=>{S.playing=!S.playing;post({paused:!S.playing});schedule()};
+$("play").onclick=()=>{if(!S.F.length)return;if(S.hplay){stopHist();return}
+ if(!S.follow||S.done){startHist();return}S.playing=!S.playing;post({paused:!S.playing});schedule()};
+// replay of the frames the page already holds; the simulation itself is not touched
+let hRaf=0;S.hplay=false;
+function startHist(){if(S.view>=S.F.length-1)S.view=0;S.follow=false;S.hplay=true;let last=performance.now(),acc=0;
+ const tick=now=>{if(!S.hplay)return;acc+=(now-last)/1000*(+$("speed").value||4);last=now;const n=Math.floor(acc);
+  if(n>0){acc-=n;S.view=Math.min(S.F.length-1,S.view+n);if(S.view>=S.F.length-1){S.hplay=false;S.follow=!S.done}schedule()}
+  if(S.hplay)hRaf=requestAnimationFrame(tick)};
+ hRaf=requestAnimationFrame(tick);schedule()}
+function stopHist(){S.hplay=false;cancelAnimationFrame(hRaf);schedule()}
 $("speed").onchange=e=>post({speed:+e.target.value});
 $("seek").oninput=e=>seekTo(+e.target.value);
-$("live").onclick=()=>seekTo(S.F.length-1);
+$("live").onclick=()=>{stopHist();seekTo(S.F.length-1)};
 addEventListener("keydown",e=>{if(e.code==="Space"&&!/INPUT|SELECT|BUTTON/.test(e.target.tagName)){e.preventDefault();$("play").click()}});
 addEventListener("resize",()=>{roadCache=null;S.researchStale=true;schedule()});
 
@@ -1129,11 +1138,14 @@ function header(){
  const m=$("mode"),L=S.L;
  const st=S.conn==="lost"?["bad","DISCONNECTED"]:S.done?["sim","RUN FINISHED"]:!L?["sim","CONNECTING"]:!S.F.length?["sim","WAITING FOR FIRST STEP"]:L.mode==="live"?["ok","LIVE SUMO"]:["warn","REPLAY"];
  m.className="chip mode "+st[0];m.innerHTML=(st[0]==="ok"?'<span class="dot"></span>':"")+st[1];
- $("play").innerHTML=`<svg viewBox="0 0 24 24">${S.playing?ICON.pause:ICON.play}</svg>`;$("play").disabled=!!S.done;
+ const running=S.hplay||(S.follow&&S.playing&&!S.done);
+ $("play").innerHTML=`<svg viewBox="0 0 24 24">${running?ICON.pause:ICON.play}</svg>`;$("play").disabled=!S.F.length;
+ $("play").title=S.hplay?"Pause the replay":(!S.follow||S.done)?"Replay from this point (space)":"Pause / resume the simulation (space)";
  const f=cur();$("clock").innerHTML=f?`t = ${Math.round(f.t)} s${L&&L.seconds?` <small>/ ${L.seconds}</small>`:""}`:"t = –";
  $("seek").max=Math.max(0,S.F.length-1);$("seek").value=S.view;$("live").disabled=S.follow;
  const rp=L&&L.mode==="replay";$("live").textContent=rp?"Back to latest":"Back to live";
- $("seekt").textContent=!f?"waiting for the simulation":S.follow?(S.done?"run finished · showing the last second":!S.playing?"paused":rp?"following the replay":"following live"):`reviewing t = ${fmtT(f.t)} (${rp?"replay":"live"} at ${fmtT(S.F[S.F.length-1].t)})`}
+ $("seekt").textContent=!f?"waiting for the simulation":S.follow?(S.done?"run finished \u00B7 press \u25B6 to replay it from the start":!S.playing?"paused":rp?"following the replay":"following live"):S.hplay?`replaying t = ${fmtT(f.t)} (${S.done?"run ends at":rp?"replay at":"live at"} ${fmtT(S.F[S.F.length-1].t)})`:
+  `reviewing t = ${fmtT(f.t)} \u00B7 press \u25B6 to replay from here (${rp?"replay":"live"} at ${fmtT(S.F[S.F.length-1].t)})`}
 function render(){
  header();
  if(S.page==="research"){if(S.research&&S.researchStale){S.researchStale=false;research()}return}
