@@ -1,0 +1,5 @@
+{
+  "_note": "Congested main road, quiet side streets: main entries 1.3 x, side entries 0.4 x config/demand.json. Tests whether a controller wastes green on near-empty side streets. Synthetic.",
+  "main_veh_per_h": 1170,
+  "side_veh_per_h": 60
+}

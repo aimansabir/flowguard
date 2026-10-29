@@ -10,3 +10,6 @@ results/*
 # Colab bundle built by scripts/pack_for_colab.py
 packages/vision/colab/*.zip
 packages/vision/colab/work/
+
+# demand files generated from config/demand_scenarios/ (deterministic per seed)
+data/demand/*/

@@ -1,0 +1,5 @@
+{
+  "_note": "Right-turn heavy: half the main-road traffic turns off (instead of 30 %) and turning trips take the right turn, which in left-hand traffic crosses the oncoming lanes, three times as often as the left. Side streets: 40 % straight across, turns onto the main road right-heavy the same way. Synthetic.",
+  "main_through_share": 0.5,
+  "turn_weights": {"right": 3.0, "left": 1.0}
+}

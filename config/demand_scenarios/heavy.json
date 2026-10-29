@@ -1,0 +1,5 @@
+{
+  "_note": "Heavy traffic: every entry 1.5 x config/demand.json, same turning shares and class mix (the 1.5 x demand used for the left-hand traffic check, D29). Synthetic, not survey data.",
+  "main_veh_per_h": 1350,
+  "side_veh_per_h": 225
+}

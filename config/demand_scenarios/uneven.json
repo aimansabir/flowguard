@@ -1,0 +1,4 @@
+{
+  "_note": "Uneven directional demand: the main road is busier eastbound (from W, 1.5 x) than westbound (from E, 0.5 x), and side streets are busier from the south (1.6 x) than from the north (0.4 x). Totals are close to config/demand.json. Synthetic.",
+  "entry_scale": {"W_J1": 1.5, "E_J3": 0.5, "S1_J1": 1.6, "S2_J2": 1.6, "S3_J3": 1.6, "N1_J1": 0.4, "N2_J2": 0.4, "N3_J3": 0.4}
+}
