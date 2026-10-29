@@ -145,6 +145,15 @@ th:first-child,td:first-child{text-align:left}
 .det.h{color:var(--mute);font-size:11.5px;border-bottom:1px solid var(--line);padding-top:0}
 .det.h span{text-align:right}
 .det.t{border-bottom:0;font-weight:650}
+/* map zoom */
+#map{cursor:crosshair}
+.mapctl{position:absolute;left:12px;top:12px;display:flex;gap:6px;z-index:2}
+.mapctl button{background:rgba(9,16,29,.88);border:1px solid var(--line2);color:var(--dim);border-radius:8px;padding:4px 11px;font-size:12.5px;cursor:pointer;transition:background .12s,color .12s}
+.mapctl button:hover{color:var(--txt);background:#15223a}
+.mapctl button.on{color:#fff;border-color:#2f5bb0;background:#15274a}
+.mapctl .sep{width:1px;background:var(--line2);margin:3px 2px}
+.maphint{position:absolute;left:12px;bottom:10px;font-size:11.5px;color:#94a3b8;background:rgba(9,16,29,.8);border-radius:6px;padding:3px 9px;pointer-events:none;z-index:2}
+#mapsel{position:absolute;display:none;border:1.5px dashed #7cb1ff;background:rgba(59,130,246,.12);border-radius:4px;pointer-events:none;z-index:2}
 /* guard */
 #p-guard{grid-template-columns:300px minmax(0,1fr) 340px;grid-template-rows:auto minmax(300px,1fr) auto;align-content:start}
 .cams{grid-row:1/4;display:flex;flex-direction:column}
@@ -290,7 +299,8 @@ code{font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;color:#cbd5
  <section class="page" id="p-overview">
   <div class="card map-card">
    <h3>Live Traffic Corridor <span class="dim">(3 Intersections)</span><span class="r"><span class="legend" id="vlegend"></span></span></h3>
-   <div class="cv"><canvas id="map"></canvas></div>
+   <div class="cv"><canvas id="map"></canvas><div class="mapctl" id="mapctl"></div><div id="mapsel"></div>
+    <div class="maphint">Drag a box to zoom in · scroll to zoom · Shift+drag to pan · double-click to see all</div></div>
   </div>
   <div class="three">
    <div class="card mod" data-go="vision"><div class="mh"><div class="mi"><svg viewBox="0 0 24 24"><path d="M3 8a2 2 0 0 1 2-2h2l2-2h6l2 2h2a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><circle cx="12" cy="13" r="3.5"/></svg></div><div><b>Vision</b><span class="s">Camera measurements</span></div><span class="cw" id="ovv-chip"></span></div>
@@ -406,7 +416,7 @@ function setup(){
  $("vlegend").innerHTML=CLS.map((c,i)=>`<span><i style="background:${CC[i]}"></i>${c}</span>`).join("")+
   `<span style="margin-left:8px"><i style="background:rgba(96,165,250,.5)"></i>camera zone</span>`;
  $("vsel").innerHTML=IDS.map(a=>`<option>${a}</option>`).join("");
- roadCache=null;
+ roadCache=null;buildMapCtl();
 }
 
 // ---------- derived events ----------
@@ -467,7 +477,7 @@ const isMP=()=>S.L.controller_cfg.kind==="maxpressure";
 // ---------- map ----------
 let roadCache=null;
 // lw widens lanes and vehicles on screen when a lane would be thinner than ~8 px; positions stay SUMO's
-function view(W,H,cx,cy,sc){return {W,H,sc,lw:Math.max(1,Math.min(1.8,8/(3.2*sc))),px:(x,y)=>[W/2+(x-cx)*sc,H/2-(y-cy)*sc]}}
+function view(W,H,cx,cy,sc){return {W,H,sc,cx,cy,lw:Math.max(1,Math.min(1.8,8/(3.2*sc))),px:(x,y)=>[W/2+(x-cx)*sc,H/2-(y-cy)*sc]}}
 function fullView(W,H){const B=S.L.net.bounds,pad=16,xs=S.L.junctions.map(j=>jCenter(j.id)[0]);
  const x0=Math.max(B[0],Math.min(...xs)-100),x1=Math.min(B[2],Math.max(...xs)+100),yr=Math.min(B[3]-B[1],160);
  const sc=Math.min((W-2*pad)/(x1-x0),(H-2*pad)/yr);return view(W,H,(x0+x1)/2,(B[1]+B[3])/2,sc)}
@@ -524,7 +534,7 @@ function approachFrame(v,e){const l=e.lanes[0],[x,y]=v.px(...l[l.length-1]),[rx,
 function drawScene(g,v,f,opt){
  const bg=g.createRadialGradient(v.W/2,v.H/2,0,v.W/2,v.H/2,Math.max(v.W,v.H)*.7);bg.addColorStop(0,"#0b171e");bg.addColorStop(1,"#070f14");
  g.fillStyle=bg;g.fillRect(0,0,v.W,v.H);
- if(opt.cache){const d=window.devicePixelRatio||1,key=v.W+"x"+v.H+"@"+d;
+ if(opt.cache){const d=window.devicePixelRatio||1,key=`${v.W}x${v.H}@${d}:${v.cx.toFixed(2)},${v.cy.toFixed(2)},${v.sc.toFixed(4)}`;
   if(!roadCache||roadCache.key!==key){const oc=document.createElement("canvas");oc.width=v.W*d;oc.height=v.H*d;const og=oc.getContext("2d");og.scale(d,d);drawRoads(og,v);roadCache={key,oc}}
   g.drawImage(roadCache.oc,0,0,v.W,v.H)}else drawRoads(g,v);
  const path=roadPath(g,v),EW=e=>e.width*v.sc*v.lw;
@@ -590,23 +600,62 @@ function drawScene(g,v,f,opt){
  const len=60*v.sc,sx=v.W-24-len,sy=v.H-22;g.strokeStyle="#cbd5e1";g.lineWidth=2;g.beginPath();g.moveTo(sx,sy-4);g.lineTo(sx,sy);g.lineTo(sx+len,sy);g.lineTo(sx+len,sy-4);g.stroke();
  g.font=`11px ${FONT}`;g.fillStyle="#cbd5e1";g.fillText("60 m (camera zone)",sx+len/2,sy-8);g.textAlign="start";
 }
-function drawMap(){const c=$("map"),[g,W,H]=fit(c),f=cur();const v=fullView(W,H);S.mapView=v;
+function drawMap(){const c=$("map"),[g,W,H]=fit(c),f=cur();const v=mapView(W,H);S.mapView=v;
  drawScene(g,v,f,{cache:true,labels:true,hits:true,sel:null,selJ:null});
- if(!f.veh){g.font="12.5px Segoe UI,system-ui";g.fillStyle="#97a6bc";g.fillText("Replay of recorded measurements: vehicle positions were not recorded, so only signals and camera states are drawn.",14,22)}}
+ if(!f.veh){g.font="12.5px Segoe UI,system-ui";g.fillStyle="#97a6bc";g.fillText("Replay of recorded measurements: vehicle positions were not recorded, so only signals and camera states are drawn.",14,H-36)}}
 
 // map interaction
 const tip=$("tip");
 function hitAt(e){const r=$("map").getBoundingClientRect(),x=e.clientX-r.left,y=e.clientY-r.top;let best=null,bd=1e9;
  for(const h of S.hits||[]){const d=Math.hypot(h.x-x,h.y-y);if(d<h.r&&d<bd){bd=d;best=h}}return best}
-$("map").addEventListener("mousemove",e=>{if(!S.L||!S.F.length)return;const h=hitAt(e);$("map").style.cursor=h?"pointer":"default";
+$("map").addEventListener("mousemove",e=>{if(!S.L||!S.F.length||(drag&&drag.moved))return;const h=hitAt(e);$("map").style.cursor=h?"pointer":e.shiftKey&&S.mz?"grab":"crosshair";
  if(!h){tip.style.display="none";return}const f=cur();
  if(h.type==="cam"){const s=f.app[h.id]||{},tr=trustOf(s);
   tip.innerHTML=`<b>${h.id}</b> · ${tr==null?"no Guard state":TRN[tr]}<br><span class="dim">camera</span> ${s.miss?"no data":pcu(s.q)+" PCU"} · <span class="dim">controller uses</span> ${pcu(s.est)}${s.ov?" (virtual)":""}<br><span class="mute">click to open in Guard</span>`}
  else{const jn=f.jn[h.id];tip.innerHTML=`<b>${h.id}</b> · phase ${jn.tg} · ${jn.st.replace("_"," ")}<br><span class="mute">click to open in Controller</span>`}
  tip.style.display="block";tip.style.left=(e.clientX+14)+"px";tip.style.top=(e.clientY+14)+"px"});
 $("map").addEventListener("mouseleave",()=>{tip.style.display="none"});
-$("map").addEventListener("click",e=>{const h=hitAt(e);if(!h)return;tip.style.display="none";
+$("map").addEventListener("click",e=>{if(S.dragged){S.dragged=false;return}const h=hitAt(e);if(!h)return;tip.style.display="none";
  if(h.type==="cam"){selectA(h.id);go("guard")}else{selectJ(h.id);go("controller")}});
+
+// ---------- map zoom ----------
+// S.mz: the zoomed view {cx, cy, sc} in network metres (null = whole corridor); S.mzLabel: which button is lit
+S.mz=null;S.mzLabel="all";
+const MAXSC=30;
+function mapView(W,H){const f=fullView(W,H);return S.mz?view(W,H,S.mz.cx,S.mz.cy,Math.max(f.sc,S.mz.sc)):f}
+function toNet(v,X,Y){return [v.cx+(X-v.W/2)/v.sc,v.cy-(Y-v.H/2)/v.sc]}
+function clampZ(z,full){const B=S.L.net.bounds;return {sc:Math.min(MAXSC,Math.max(full.sc,z.sc)),cx:Math.max(B[0],Math.min(B[2],z.cx)),cy:Math.max(B[1],Math.min(B[3],z.cy))}}
+let zAnim=0,drag=null;
+function zoomTo(t,label){
+ if(!S.L)return;const r=$("map").getBoundingClientRect(),full=fullView(r.width,r.height),from=S.mapView||full;
+ const to=t&&t.sc>full.sc*1.02?clampZ(t,full):null,end=to||{cx:full.cx,cy:full.cy,sc:full.sc},a={cx:from.cx,cy:from.cy,sc:from.sc},t0=performance.now();
+ S.mzLabel=to?(label||""):"all";syncZoom();cancelAnimationFrame(zAnim);
+ const step=now=>{const k=Math.min(1,(now-t0)/260),e=1-Math.pow(1-k,3);
+  S.mz={cx:a.cx+(end.cx-a.cx)*e,cy:a.cy+(end.cy-a.cy)*e,sc:Math.exp(Math.log(a.sc)+(Math.log(end.sc)-Math.log(a.sc))*e)};
+  if(k<1){if(S.F.length)drawMap();zAnim=requestAnimationFrame(step)}else{S.mz=to;schedule()}};
+ zAnim=requestAnimationFrame(step)}
+function buildMapCtl(){$("mapctl").innerHTML=`<button data-z="all">All</button>${JIDS.map(j=>`<button data-z="${j}">${j}</button>`).join("")}<span class="sep"></span><button data-z="in" title="Zoom in">+</button><button data-z="out" title="Zoom out">\u2212</button>`;syncZoom()}
+function syncZoom(){for(const b of $("mapctl").querySelectorAll("button"))b.classList.toggle("on",b.dataset.z===S.mzLabel)}
+$("mapctl").addEventListener("click",e=>{const b=e.target.closest("button");if(!b||!S.L)return;const z=b.dataset.z,r=$("map").getBoundingClientRect(),v=S.mapView;
+ if(z==="all")zoomTo(null);
+ else if(z==="in"||z==="out"){if(v)zoomTo({cx:v.cx,cy:v.cy,sc:v.sc*(z==="in"?1.6:1/1.6)})}
+ else{const [x,y]=jCenter(z);zoomTo({cx:x,cy:y,sc:Math.min(r.width/200,r.height/95)},z)}});
+$("map").addEventListener("mousedown",e=>{if(e.button!==0||!S.mapView)return;S.dragged=false;const r=$("map").getBoundingClientRect();
+ drag={x0:e.clientX-r.left,y0:e.clientY-r.top,pan:e.shiftKey&&!!S.mz,moved:false,v:S.mapView};e.preventDefault()});
+addEventListener("mousemove",e=>{if(!drag)return;const r=$("map").getBoundingClientRect(),x=e.clientX-r.left,y=e.clientY-r.top;
+ if(!drag.moved&&Math.hypot(x-drag.x0,y-drag.y0)>5){drag.moved=true;tip.style.display="none"}if(!drag.moved)return;
+ if(drag.pan){const v=drag.v;cancelAnimationFrame(zAnim);S.mz=clampZ({cx:v.cx-(x-drag.x0)/v.sc,cy:v.cy+(y-drag.y0)/v.sc,sc:v.sc},fullView(v.W,v.H));
+  if(S.mzLabel){S.mzLabel="";syncZoom()}drawMap();return}
+ const sel=$("mapsel").style,cx=Math.max(0,Math.min(r.width,x)),cy=Math.max(0,Math.min(r.height,y));
+ sel.display="block";sel.left=Math.min(cx,drag.x0)+"px";sel.top=Math.min(cy,drag.y0)+"px";sel.width=Math.abs(cx-drag.x0)+"px";sel.height=Math.abs(cy-drag.y0)+"px"});
+addEventListener("mouseup",e=>{if(!drag)return;const d=drag;drag=null;$("mapsel").style.display="none";if(!d.moved)return;S.dragged=true;
+ if(d.pan){schedule();return}
+ const r=$("map").getBoundingClientRect(),x=Math.max(0,Math.min(r.width,e.clientX-r.left)),y=Math.max(0,Math.min(r.height,e.clientY-r.top)),bw=Math.abs(x-d.x0),bh=Math.abs(y-d.y0);
+ if(bw<12||bh<12)return;const [cx,cy]=toNet(d.v,(x+d.x0)/2,(y+d.y0)/2);zoomTo({cx,cy,sc:d.v.sc*Math.min(d.v.W/bw,d.v.H/bh)})});
+$("map").addEventListener("wheel",e=>{if(!S.mapView)return;e.preventDefault();const v=S.mapView,r=$("map").getBoundingClientRect(),X=e.clientX-r.left,Y=e.clientY-r.top,[px,py]=toNet(v,X,Y);
+ const full=fullView(v.W,v.H),sc=Math.min(MAXSC,Math.max(full.sc,v.sc*(e.deltaY<0?1.25:1/1.25)));cancelAnimationFrame(zAnim);
+ S.mz=sc<=full.sc*1.02?null:clampZ({sc,cx:px-(X-v.W/2)/sc,cy:py+(Y-v.H/2)/sc},full);S.mzLabel=S.mz?"":"all";syncZoom();drawMap()},{passive:false});
+$("map").addEventListener("dblclick",e=>{e.preventDefault();zoomTo(null)});
 
 // ---------- overview ----------
 function guardCounts(f){let s=0,b=0,v=0,m=0;for(const a of IDS){const x=f.app[a]||{};if(x.tr===1)s++;if(x.tr===2)b++;if(x.ov)v++;if(x.miss)m++}return {s,b,v,m}}
