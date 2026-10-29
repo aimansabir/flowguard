@@ -42,7 +42,8 @@ def frames_from_video(path: Path, every_s: float = 0.0) -> Iterator[Frame]:
             index += 1
             if t - last >= every_s:
                 last = t
-                yield Frame(t, cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY))
+                gray = np.asarray(cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY), np.uint8)
+                yield Frame(t, gray, np.asarray(bgr, np.uint8))
     finally:
         cap.release()
 
@@ -53,7 +54,7 @@ def reference_frame(calib_path: Path, name: str) -> NDArray[np.uint8]:
     image = cv2.imread(str(calib_path.parent / name), cv2.IMREAD_GRAYSCALE)
     if image is None:
         raise FileNotFoundError(f"reference frame {name} not found next to {calib_path}")
-    return image
+    return np.asarray(image, np.uint8)
 
 
 def main() -> None:

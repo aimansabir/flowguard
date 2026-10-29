@@ -13,6 +13,7 @@ from flowguard_vision.geometry import Point
 class Frame:
     t: float  # seconds since the start of the clip
     gray: NDArray[np.uint8]
+    bgr: NDArray[np.uint8] | None = None  # colour frame for the detector, when the source has one
 
 
 @dataclass(frozen=True)

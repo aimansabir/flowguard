@@ -15,6 +15,15 @@ have not been run on real footage, and stock COCO weights have no rickshaw or qi
 class: accuracy on Karachi video is not validated. `stub.py` builds a valid empty Measurement. `scripts/vision_dashboard.py`
 shows the pipeline on a toy scene with injected camera faults.
 
+First run on real footage (pretrained YOLOv8n + ByteTrack, CPU, 11 s street clip, approximate
+calibration): runs end to end and every Measurement validates. Install with
+`uv pip install ultralytics opencv-python-headless lapx`; ultralytics' tracker needs `lap`, and its
+auto-install does not work inside a uv environment. About 15 % more detections with the colour
+frame than with grayscale, so the adapter now gets the colour frame. Findings: a roof-down clip
+is unusable with COCO weights (vehicles come out as "cell phone"); distant parked cars flicker in
+and out and break tracks (60-120 track breaks per minute); counts were plausible (5 arrivals,
+4 departures for 4 moving vehicles) but are not validated against labels.
+
 Tools for a real clip:
 - `tools/calibrate.html` (open in a browser, no install): draw the zone, entry and stop lines, turn
   regions and four ground points on one frame, then download `<approach_id>.json`. Keep the frame

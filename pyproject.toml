@@ -26,7 +26,7 @@ testpaths = ["tests"]
 [tool.ruff]
 line-length = 110
 target-version = "py312"
-extend-exclude = ["packages/contracts/src/flowguard_contracts/models.py"]
+extend-exclude = ["packages/contracts/src/flowguard_contracts/models.py", "*.ipynb"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "SIM"]

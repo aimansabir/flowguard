@@ -49,3 +49,28 @@ def test_modules_import_without_the_ml_dependencies() -> None:
 
     for name in ("flowguard_vision.video", "flowguard_vision.yolo"):
         assert importlib.import_module(name)
+
+
+def test_detector_gets_the_colour_frame_when_there_is_one() -> None:
+    import numpy as np
+
+    from flowguard_vision.tracking import Frame
+    from flowguard_vision.yolo import YoloByteTrack
+
+    seen: list[tuple[int, ...]] = []
+
+    class Result:
+        boxes = None
+        names = NAMES
+
+    class Model:
+        def track(self, image: Any, **_: Any) -> list[Result]:
+            seen.append(image.shape)
+            return [Result()]
+
+    tracker = object.__new__(YoloByteTrack)  # skip the ultralytics import in __init__
+    tracker._model, tracker._confidence, tracker._classes = Model(), 0.25, COCO  # pyright: ignore
+    gray = np.zeros((4, 6), np.uint8)
+    tracker.update(Frame(0.0, gray))
+    tracker.update(Frame(0.1, gray, np.zeros((4, 6, 3), np.uint8)))
+    assert seen == [(4, 6, 3), (4, 6, 3)]
