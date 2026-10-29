@@ -15,6 +15,13 @@ have not been run on real footage, and stock COCO weights have no rickshaw or qi
 class: accuracy on Karachi video is not validated. `stub.py` builds a valid empty Measurement. `scripts/vision_dashboard.py`
 shows the pipeline on a toy scene with injected camera faults.
 
+Tools for a real clip:
+- `tools/calibrate.html` (open in a browser, no install): draw the zone, entry and stop lines, turn
+  regions and four ground points on one frame, then download `<approach_id>.json`. Keep the frame
+  image next to it.
+- `colab/flowguard_vision.ipynb`: runs YOLO + ByteTrack on a Colab GPU. Build the upload with
+  `uv run python scripts/pack_for_colab.py`; the notebook lists the files it needs.
+
 Rules:
 - Depend on `flowguard_contracts` only (enforced by `tests/test_boundaries.py`).
 - Raw per-class counts; never PCU, never trust judgements. That is the core's job.

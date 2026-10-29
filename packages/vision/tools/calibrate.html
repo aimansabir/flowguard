@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FlowGuard camera calibration</title>
+<style>
+body{margin:0;font:14px/1.45 "Segoe UI",system-ui,sans-serif;color:#0e1726;background:#f4f5f7;display:grid;grid-template-columns:340px 1fr;height:100vh}
+aside{padding:18px;overflow:auto;background:#fff;border-right:1px solid #e2e6ec}
+main{padding:18px;overflow:auto}
+h1{font-size:18px;margin:0 0 4px}h2{font-size:14px;margin:18px 0 6px}
+p,.hint{color:#46536a;margin:4px 0}
+label{display:grid;gap:3px;margin:8px 0;font-weight:600;font-size:13px}
+input[type=text],input[type=number]{padding:7px 9px;border:1px solid #ccd4de;border-radius:8px;font:inherit;width:100%;box-sizing:border-box}
+.modes{display:grid;gap:4px}
+.modes button{text-align:left;padding:8px 10px;border:1px solid #ccd4de;border-radius:8px;background:#fff;cursor:pointer;font:inherit;display:flex;justify-content:space-between}
+.modes button.on{border-color:#0f1c2e;box-shadow:0 0 0 1px #0f1c2e;font-weight:600}
+.modes button span{color:#76839a;font-weight:400}
+.row{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
+button.act{padding:8px 12px;border:1px solid #ccd4de;border-radius:8px;background:#fff;cursor:pointer;font:inherit}
+button.go{background:#0f1c2e;border-color:#0f1c2e;color:#fff;font-weight:600}
+#canvas{border:1px solid #ccd4de;border-radius:8px;background:#e9eef4;cursor:crosshair;max-width:100%}
+.pairs{display:grid;grid-template-columns:auto 1fr 1fr;gap:6px;align-items:center;font-size:12.5px}
+.err{color:#b42318;margin-top:8px}.ok{color:#0b7a3a;margin-top:8px}
+textarea{width:100%;height:220px;font:12px Consolas,monospace;border:1px solid #ccd4de;border-radius:8px;padding:8px;box-sizing:border-box}
+</style></head>
+<body>
+<aside>
+ <h1>Camera calibration</h1>
+ <p>Draw the zone, lines and ground points on one still frame, then download the calibration file.</p>
+ <label>Frame from the clip<input type="file" id="img" accept="image/*"></label>
+ <label>Junction id<input type="text" id="junction" placeholder="J1"></label>
+ <label>Approach id<input type="text" id="approach" placeholder="W_J1"></label>
+ <label>Zone length in metres<input type="number" id="zlen" value="60" min="1" step="1"></label>
+ <h2>What to draw</h2>
+ <div class="modes" id="modes"></div>
+ <div class="row"><button class="act" id="undo">Undo last point</button><button class="act" id="clear">Clear this shape</button></div>
+ <p class="hint" id="modehint"></p>
+ <h2>Ground points</h2>
+ <p class="hint">Four clicks on the frame whose position on the road you know. Enter their position in metres on any flat grid, for example x across the road and y back from the stop line.</p>
+ <div class="pairs" id="pairs"></div>
+ <div class="row"><button class="act go" id="build">Check and download</button></div>
+ <div id="msg"></div>
+</aside>
+<main>
+ <canvas id="canvas" width="960" height="540"></canvas>
+ <h2>Calibration file</h2>
+ <textarea id="out" readonly placeholder="The file appears here after you press Check and download."></textarea>
+</main>
+<script src="calibrate.js"></script>
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const SHAPES = [
+ {k: "zone", name: "Zone", n: 0, hint: "Click around the road area the camera counts (at least 3 points). Include the whole queue length."},
+ {k: "entry", name: "Entry line", n: 2, hint: "Two points across the road where vehicles enter the zone."},
+ {k: "stop", name: "Stop line", n: 2, hint: "Two points on the stop line. Vehicles crossing it count as departures."},
+ {k: "left", name: "Left region", n: 0, hint: "Polygon on the road a left-turning vehicle ends up in. Leave empty if there is no left turn."},
+ {k: "straight", name: "Straight region", n: 0, hint: "Polygon beyond the stop line for vehicles going straight."},
+ {k: "right", name: "Right region", n: 0, hint: "Polygon for right-turning vehicles. Leave empty if there is no right turn."},
+ {k: "pairs", name: "Ground points", n: 4, hint: "Click four points, then type their metres in the boxes on the left."},
+];
+const COLORS = {zone: "#2563eb", entry: "#e89b00", stop: "#e03a2f", left: "#7c3aed", straight: "#12a150", right: "#c2268a", pairs: "#0e1726"};
+const S = {zone: [], entry: [], stop: [], left: [], straight: [], right: [], pairs: [[], [], [], []].map(() => ({px: null, m: ["", ""]})), mode: "zone", img: null, name: "frame.png", scale: 1};
+let pairClicks = 0;
+
+function drawModes() {
+ $("modes").innerHTML = SHAPES.map((s) => {
+  const n = s.k === "pairs" ? S.pairs.filter((p) => p.px).length : S[s.k].length;
+  return `<button data-k="${s.k}" class="${S.mode === s.k ? "on" : ""}">${s.name}<span>${n}${s.n ? " / " + s.n : " points"}</span></button>`;
+ }).join("");
+ $("modehint").textContent = SHAPES.find((s) => s.k === S.mode).hint;
+}
+function drawPairs() {
+ $("pairs").innerHTML = S.pairs.map((p, i) => `<span>${i + 1}</span><input type="number" step="any" data-i="${i}" data-a="0" placeholder="x (m)" value="${p.m[0]}"><input type="number" step="any" data-i="${i}" data-a="1" placeholder="y (m)" value="${p.m[1]}">`).join("");
+}
+function paint() {
+ const c = $("canvas"), g = c.getContext("2d");
+ g.clearRect(0, 0, c.width, c.height);
+ if (S.img) g.drawImage(S.img, 0, 0, c.width, c.height);
+ const shape = (pts, col, close) => {
+  if (!pts.length) return;
+  g.strokeStyle = col; g.fillStyle = col; g.lineWidth = 2;
+  g.beginPath(); pts.forEach((p, i) => (i ? g.lineTo(p[0] * S.scale, p[1] * S.scale) : g.moveTo(p[0] * S.scale, p[1] * S.scale)));
+  if (close && pts.length > 2) { g.closePath(); g.globalAlpha = 0.15; g.fill(); g.globalAlpha = 1; }
+  g.stroke();
+  pts.forEach((p) => { g.beginPath(); g.arc(p[0] * S.scale, p[1] * S.scale, 4, 0, 7); g.fill(); });
+ };
+ for (const k of ["zone", "left", "straight", "right"]) shape(S[k], COLORS[k], true);
+ for (const k of ["entry", "stop"]) shape(S[k], COLORS[k], false);
+ S.pairs.forEach((p, i) => { if (!p.px) return; g.fillStyle = COLORS.pairs; g.beginPath(); g.arc(p.px[0] * S.scale, p.px[1] * S.scale, 6, 0, 7); g.fill();
+  g.fillStyle = "#fff"; g.font = "bold 10px sans-serif"; g.textAlign = "center"; g.fillText(i + 1, p.px[0] * S.scale, p.px[1] * S.scale + 3.5); });
+ drawModes();
+}
+$("img").onchange = (e) => {
+ const f = e.target.files[0]; if (!f) return;
+ S.name = f.name;
+ const im = new Image();
+ im.onload = () => { S.img = im; S.scale = Math.min(1, 1000 / im.naturalWidth);
+  const c = $("canvas"); c.width = Math.round(im.naturalWidth * S.scale); c.height = Math.round(im.naturalHeight * S.scale); paint(); };
+ im.src = URL.createObjectURL(f);
+};
+$("canvas").onclick = (e) => {
+ const r = $("canvas").getBoundingClientRect(), k = S.mode;
+ const p = [(e.clientX - r.left) * ($("canvas").width / r.width) / S.scale, (e.clientY - r.top) * ($("canvas").height / r.height) / S.scale];
+ const shape = SHAPES.find((s) => s.k === k);
+ if (k === "pairs") { const i = S.pairs.findIndex((q) => !q.px); if (i >= 0) S.pairs[i].px = p; }
+ else if (!shape.n || S[k].length < shape.n) S[k].push(p);
+ paint();
+};
+$("modes").onclick = (e) => { const b = e.target.closest("button"); if (b) { S.mode = b.dataset.k; paint(); } };
+$("undo").onclick = () => { if (S.mode === "pairs") { const i = S.pairs.map((q) => !!q.px).lastIndexOf(true); if (i >= 0) S.pairs[i].px = null; } else S[S.mode].pop(); paint(); };
+$("clear").onclick = () => { if (S.mode === "pairs") S.pairs.forEach((q) => (q.px = null)); else S[S.mode] = []; paint(); };
+$("pairs").oninput = (e) => { const t = e.target; if (t.dataset.i != null) S.pairs[+t.dataset.i].m[+t.dataset.a] = t.value === "" ? "" : Number(t.value); };
+$("build").onclick = () => {
+ const res = buildCalibration({
+  junction_id: $("junction").value, approach_id: $("approach").value, zone_length_m: $("zlen").value, reference_frame: S.name,
+  zone: S.zone, entry: S.entry, stop: S.stop, movements: {left: S.left, straight: S.straight, right: S.right},
+  pairs: S.pairs.filter((q) => q.px).map((q) => ({px: q.px, m: q.m.map((v) => (v === "" ? NaN : Number(v)))})),
+ });
+ if (res.errors.length) { $("msg").innerHTML = res.errors.map((x) => `<div class="err">${x}</div>`).join(""); return; }
+ const text = JSON.stringify(res.calibration, null, 2);
+ $("out").value = text;
+ const a = document.createElement("a");
+ a.href = URL.createObjectURL(new Blob([text], {type: "application/json"}));
+ a.download = res.calibration.approach_id + ".json"; a.click();
+ $("msg").innerHTML = `<div class="ok">Saved ${a.download}. Put it next to the frame image ${S.name} (the pipeline looks for the frame beside the calibration file).</div>`;
+};
+drawModes(); drawPairs(); paint();
+</script>
+</body></html>
