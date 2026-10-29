@@ -402,7 +402,23 @@ pub enum ControllerConfig {
         hysteresis: Option<Hysteresis>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         capacity: Option<Capacity>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        serve_queue: Option<ServeQueue>,
     },
+}
+
+/// Actuated extension for max-pressure (D32): keep the green on an approach
+/// that is still discharging a queue. With one phase per approach every
+/// switch costs a clearance, so ending a green while its queue still flows
+/// at saturation throws capacity away. The envelope's max red still applies.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ServeQueue {
+    /// Keep the current phase while one of its approaches still has at least
+    /// this queue per lane (PCU) and a positive pressure term (it can move).
+    pub hold_pcu_per_lane: f64,
+    /// Longest green the extension keeps, s.
+    pub max_green_s: f64,
 }
 
 /// Spillback protection for max-pressure (D22): an approach adds no
@@ -773,10 +789,10 @@ mod tests {
         assert_eq!(f, ControllerConfig::Fixed { green_s: vec![40.0, 20.0], offsets_s: None });
         assert_eq!(serde_json::to_string(&f).unwrap(), r#"{"kind":"fixed","green_s":[40.0,20.0]}"#);
         let m: ControllerConfig = serde_json::from_str(r#"{"kind":"maxpressure"}"#).unwrap();
-        assert_eq!(m, ControllerConfig::MaxPressure { hysteresis: None, capacity: None });
+        assert_eq!(m, ControllerConfig::MaxPressure { hysteresis: None, capacity: None, serve_queue: None });
         let h: ControllerConfig =
             serde_json::from_str(r#"{"kind":"maxpressure","hysteresis":{"gain_pcu":2}}"#).unwrap();
-        assert_eq!(h, ControllerConfig::MaxPressure { hysteresis: Some(Hysteresis { gain_pcu: 2.0 }), capacity: None });
+        assert_eq!(h, ControllerConfig::MaxPressure { hysteresis: Some(Hysteresis { gain_pcu: 2.0 }), capacity: None, serve_queue: None });
         assert_eq!(serde_json::to_string(&m).unwrap(), r#"{"kind":"maxpressure"}"#);
     }
 

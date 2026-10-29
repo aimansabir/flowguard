@@ -197,7 +197,7 @@ th:first-child,td:first-child{text-align:left}
 .jc .ph{font-size:13px;color:var(--dim);margin:10px 0 4px}
 .jc .ph b{color:var(--txt);font-size:15px}
 .prog{height:6px;background:#0b1424;border-radius:4px;overflow:hidden;margin:6px 0 2px}.prog i{display:block;height:100%;border-radius:4px}
-.pbar{display:grid;grid-template-columns:70px 1fr 54px;gap:10px;align-items:center;font-size:12.5px;margin:7px 0}
+.pbar{display:grid;grid-template-columns:86px 1fr 54px;gap:10px;align-items:center;font-size:12.5px;margin:7px 0}
 .pbar .b{height:10px;background:#0b1424;border-radius:5px;position:relative;overflow:hidden}
 .pbar .b i{position:absolute;top:0;bottom:0;left:0;border-radius:5px}
 .pbar.act span:first-child{color:var(--txt);font-weight:600}
@@ -363,7 +363,7 @@ code{font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;color:#cbd5
   <div class="card jdetail" id="jdetail"></div>
   <div class="side2">
    <div class="card"><h3>Phase timeline, last 5 minutes</h3><div class="cv" id="ptl"><canvas id="ptlc"></canvas></div>
-    <div class="legend" style="margin-top:8px"><span><i style="background:#3b82f6"></i>phase 0</span><span><i style="background:#f59e0b"></i>phase 1</span><span><i style="background:#64748b"></i>yellow / all-red</span><span><i style="background:#ef4444;width:3px"></i>envelope override</span></div></div>
+    <div class="legend" style="margin-top:8px"><span id="phlegend"></span><span><i style="background:#64748b"></i>yellow / all-red</span><span><i style="background:#ef4444;width:3px"></i>envelope override</span></div></div>
    <div class="card"><h3>Decision log<span class="r dim">click to jump</span></h3><div class="elist" id="clog"></div></div>
   </div>
  </section>
@@ -417,6 +417,7 @@ function setup(){
   `<span style="margin-left:8px"><i style="background:rgba(96,165,250,.5)"></i>camera zone</span>`;
  $("vsel").innerHTML=IDS.map(a=>`<option>${a}</option>`).join("");
  roadCache=null;buildMapCtl();
+ $("phlegend").innerHTML=L.junctions[0].phases.map((ph,k)=>`<span><i style="background:${PHC[k%PHC.length]}"></i>phase ${k} ${fromDir(ph[0])}</span>`).join("");
 }
 
 // ---------- derived events ----------
@@ -573,7 +574,7 @@ function drawScene(g,v,f,opt){
   g.save();g.shadowColor=col;g.shadowBlur=18;g.fillStyle="rgba(9,16,29,.95)";rr(g,X-B/2,Y-B/2,B,B,10);g.fill();g.restore();
   g.lineWidth=2;g.strokeStyle=opt.selJ===j.id?"#e7eef8":col;rr(g,X-B/2,Y-B/2,B,B,10);g.stroke();
   g.textAlign="center";g.textBaseline="middle";g.fillStyle="#fff";g.font=`700 14px ${FONT}`;g.fillText(j.id,X,Y+.5);
-  const t="phase "+(jn?jn.tg:"-");g.font=`600 10.5px ${FONT}`;const tw=g.measureText(t).width+12;
+  const t=jn?phName(j.id,jn.tg)+" green":"-";g.font=`600 10.5px ${FONT}`;const tw=g.measureText(t).width+12;
   g.fillStyle="rgba(9,16,29,.9)";rr(g,X-tw/2,Y+B/2+5,tw,17,8.5);g.fill();g.strokeStyle="#2a3b57";g.lineWidth=1;g.stroke();g.fillStyle="#cbd5e1";g.fillText(t,X,Y+B/2+14);
   g.textAlign="start";g.textBaseline="alphabetic";
   S.hits.push({x:X,y:Y,r:24,type:"jn",id:j.id})}
@@ -661,6 +662,11 @@ $("map").addEventListener("dblclick",e=>{e.preventDefault();zoomTo(null)});
 function guardCounts(f){let s=0,b=0,v=0,m=0;for(const a of IDS){const x=f.app[a]||{};if(x.tr===1)s++;if(x.tr===2)b++;if(x.ov)v++;if(x.miss)m++}return {s,b,v,m}}
 function worstCam(f){let best=null;for(const a of IDS){const x=f.app[a]||{};if(x.tr>0&&(!best||x.tr>best.tr))best={a,tr:x.tr}}return best}
 function sinceOf(a,state,t){let since=null;for(const e of S.EV){if(e.t>t)break;if(e.k==="trust"&&e.a===a)since=e.to===state?e.t:null}return since}
+function phName(j,k){return k==null||!JN[j].phases[k]?"\u2013":JN[j].phases[k].join(" + ")}
+function phLong(j,k){return `${phName(j,k)} (phase ${k})`}
+function fromDir(a){const e=edge(a);if(!e)return "";const l=e.lanes[0],dx=l[l.length-1][0]-l[0][0],dy=l[l.length-1][1]-l[0][1];
+ return Math.abs(dx)>=Math.abs(dy)?(dx>0?"from the west":"from the east"):(dy<0?"from the north":"from the south")}
+const PHC=["#3b82f6","#f59e0b","#8b5cf6","#14b8a6","#ec4899","#84cc16"];
 function phaseKind(j,k){return JN[j].phases[k].every(a=>/^[NS]\d/.test(a))?"side road":"main road"}
 function overview(){
  const f=cur(),L=S.L;drawMap();
@@ -691,10 +697,10 @@ function overview(){
  const ivs=JIDS.filter(j=>f.jn[j]&&f.jn[j].iv);
  $("ovc").style.setProperty("--c",ivs.length?"#f5b83d":"#22c55e");
  $("ovc-chip").innerHTML=ivs.length?'<span class="chip warn">ENVELOPE HOLD</span>':'<span class="chip ok">OPERATIONAL</span>';
- if(bj){const jn=f.jn[bj];$("ovc-main").innerHTML=`${bj}: Phase ${jn.tg} <small class="dim">(${phaseKind(bj,jn.tg)})</small>`;
+ if(bj){const jn=f.jn[bj];$("ovc-main").innerHTML=`${bj}: ${phName(bj,jn.tg)} <small class="dim">green (${phaseKind(bj,jn.tg)})</small>`;
   $("ovc-sub").textContent=(isMP()?`Highest pressure: ${bp.toFixed(1)} PCU`:"Fixed-time plan")+(ivs.length?` \u00B7 envelope: ${ivs.map(j=>j+" "+f.jn[j].iv.replace("_"," ")).join(", ")}`:"")}
  $("ovc-js").innerHTML=JIDS.map(j=>{const jn=f.jn[j];if(!jn)return"";const c=jn.st==="green"?"var(--ok)":jn.st==="yellow"?"var(--warn)":"var(--bad)";
-  return `<span><span class="dot" style="color:${c}"></span> <b>${j}</b> P${jn.ph}${jn.ph!==jn.tg?"\u2192"+jn.tg:""} \u00B7 ${fmtT(f.t-jn.since)}</span>`}).join("");
+  return `<span><span class="dot" style="color:${c}"></span> <b>${j}</b> ${phName(j,jn.ph)}${jn.ph!==jn.tg?"\u2192"+phName(j,jn.tg):""} \u00B7 ${fmtT(f.t-jn.since)}</span>`}).join("");
  currentEvent(f);runline();
 }
 function currentEvent(f){
@@ -960,18 +966,18 @@ function story(a,f){
 function explain(k,j){
  const f=S.F[k],jn=f.jn[j],pj=k>0?S.F[k-1].jn[j]:null,c=S.L.controller_cfg,tm=S.L.timing,pr=pressures(f,j),before=pj?pj.tg:0;
  const P=i=>pr[i].toFixed(1);
- if(jn.st!=="green"||jn.ph!==jn.tg)return {hold:true,t:`Changing from phase ${jn.ph} to phase ${jn.tg}: ${jn.st.replace("_"," ")} clearance (yellow ${tm.yellow_s} s, then all-red ${tm.all_red_s} s).`};
- if(jn.iv==="min_green")return {hold:true,t:`The controller asked for phase ${jn.rq}, but the safety envelope held phase ${jn.tg}: it has been green ${fmtT(f.t-jn.since)} of the ${tm.min_green_s} s minimum.`};
- if(jn.iv==="max_red")return {hold:true,t:`The safety envelope forced phase ${jn.tg}: an approach had waited the maximum red of ${tm.max_red_s} s.`};
+ if(jn.st!=="green"||jn.ph!==jn.tg)return {hold:true,t:`Changing from ${phLong(j,jn.ph)} to ${phLong(j,jn.tg)}: ${jn.st.replace("_"," ")} clearance (yellow ${tm.yellow_s} s, then all-red ${tm.all_red_s} s).`};
+ if(jn.iv==="min_green")return {hold:true,t:`The controller asked for ${phLong(j,jn.rq)}, but the safety envelope held ${phLong(j,jn.tg)}: it has been green ${fmtT(f.t-jn.since)} of the ${tm.min_green_s} s minimum.`};
+ if(jn.iv==="max_red")return {hold:true,t:`The safety envelope served ${phLong(j,jn.tg)} instead of the controller's choice${jn.rq!=null&&jn.rq!==jn.tg?" ("+phName(j,jn.rq)+")":""}: waiting longer would keep a red approach past the maximum red of ${tm.max_red_s} s. Every approach must get green within it.`};
  if(jn.iv)return {hold:true,t:`The safety envelope changed the request (${esc(jn.iv)}).`};
- if(!isMP()){return {hold:false,t:`Fixed-time plan: phase ${jn.tg} runs its planned green. Measured queues do not change the plan; the pressures are shown for comparison only.`}}
- if(pj&&jn.tg!==before)return {hold:false,t:`Switched to phase ${jn.tg}: pressure ${P(jn.tg)} vs ${P(before)} PCU${c.hysteresis?`, more than the ${c.hysteresis.gain_pcu} PCU hysteresis gain`:""}.`};
+ if(!isMP()){return {hold:false,t:`Fixed-time plan: ${phLong(j,jn.tg)} runs its planned green. Measured queues do not change the plan; the pressures are shown for comparison only.`}}
+ if(pj&&jn.tg!==before)return {hold:false,t:`Switched to ${phLong(j,jn.tg)}: pressure ${P(jn.tg)} vs ${P(before)} PCU on ${phName(j,before)}${c.hysteresis?`, more than the ${c.hysteresis.gain_pcu} PCU hysteresis gain`:""}.`};
  let best=0;for(let i=1;i<pr.length;i++)if(pr[i]>pr[best]||(pr[i]===pr[best]&&i===jn.tg&&best!==jn.tg))best=i;
- if(best===jn.tg)return {hold:false,t:`Keeping phase ${jn.tg}: it has the highest pressure (${pr.map((v,i)=>"phase "+i+" "+v.toFixed(1)).join(", ")} PCU).`};
+ if(best===jn.tg)return {hold:false,t:`Keeping ${phLong(j,jn.tg)} green: it has the highest pressure (${pr.map((v,i)=>phName(j,i)+" "+v.toFixed(1)).join(", ")} PCU).`};
  if(c.hysteresis){const age=pj?f.t-pj.since:0,settled=pj&&pj.st==="green"&&pj.ph===pj.tg;
-  if(!settled||age<tm.min_green_s)return {hold:true,t:`Keeping phase ${jn.tg} although phase ${best} has more pressure (${P(best)} vs ${P(jn.tg)} PCU): with hysteresis the controller does not ask to change before the green has run the ${tm.min_green_s} s minimum.`};
-  if(pr[best]-pr[jn.tg]<=c.hysteresis.gain_pcu)return {hold:true,t:`Keeping phase ${jn.tg}: phase ${best} leads by only ${(pr[best]-pr[jn.tg]).toFixed(1)} PCU, within the hysteresis gain of ${c.hysteresis.gain_pcu} PCU.`}}
- return {hold:true,t:`Keeping phase ${jn.tg} although phase ${best} has more pressure; the reason is not visible in the outputs the core exposes.`}}
+  if(!settled||age<tm.min_green_s)return {hold:true,t:`Keeping ${phLong(j,jn.tg)} green although ${phName(j,best)} has more pressure (${P(best)} vs ${P(jn.tg)} PCU): with hysteresis the controller does not ask to change before the green has run the ${tm.min_green_s} s minimum.`};
+  if(pr[best]-pr[jn.tg]<=c.hysteresis.gain_pcu)return {hold:true,t:`Keeping ${phLong(j,jn.tg)} green: ${phName(j,best)} leads by only ${(pr[best]-pr[jn.tg]).toFixed(1)} PCU, within the hysteresis gain of ${c.hysteresis.gain_pcu} PCU.`}}
+ return {hold:true,t:`Keeping ${phLong(j,jn.tg)} green although ${phName(j,best)} has more pressure; the reason is not visible in the outputs the core exposes.`}}
 function controllerPage(){
  const f=cur(),L=S.L,tm=L.timing;
  L.junctions.forEach((j,i)=>{const jn=f.jn[j.id],el=$("jc-"+i);if(!jn){el.innerHTML="";return}
@@ -979,15 +985,15 @@ function controllerPage(){
   const st=jn.st==="green"?["ok","GREEN"]:jn.st==="yellow"?["warn","YELLOW"]:["bad","ALL RED"];
   el.className="card jc"+(S.selJ===j.id?" sel":"");el.dataset.j=j.id;
   el.innerHTML=`<div class="top"><b>${j.id}</b><span class="chip ${st[0]}"><span class="dot"></span>${st[1]}</span>${jn.iv?`<span class="chip warn">ENVELOPE: ${esc(jn.iv.replace("_"," ").toUpperCase())}</span>`:""}<span class="dim num" style="margin-left:auto">${fmtT(age)} in phase</span></div>
-  <div class="ph">Active phase <b>${jn.ph}</b>${jn.ph!==jn.tg?` → <b>${jn.tg}</b>`:""} · ${j.phases[jn.tg].join(" + ")}</div>
+  <div class="ph">Green approach <b>${phName(j.id,jn.ph)}</b>${jn.ph!==jn.tg?` → <b>${phName(j.id,jn.tg)}</b>`:""} <span class="mute">\u00B7 phase ${jn.tg} of ${j.phases.length}; the other approaches are red</span></div>
   <div class="prog" title="minimum green"><i style="width:${pct}%;background:${pct<100?"var(--warn)":"var(--ok)"}"></i></div><div class="note">${pct<100?`minimum green: ${Math.round(age)} of ${tm.min_green_s} s`:"minimum green served"}</div>
-  ${pr.map((v,k)=>`<div class="pbar ${k===jn.tg?"act":""}"><span>Phase ${k}</span><span class="b"><i style="width:${Math.abs(v)/mx*100}%;background:${v<0?"#7f3b3b":k===jn.tg?"#3b82f6":"#475569"}"></i></span><span class="num" style="text-align:right">${v.toFixed(1)}</span></div>`).join("")}
-  <div class="ra"><div>Requested<b>${jn.rq==null?"–":"phase "+jn.rq}</b></div><div class="${jn.rq!=null&&jn.rq!==jn.tg?"diff":""}">Approved<b>phase ${jn.tg}</b></div></div>`});
+  ${pr.map((v,k)=>`<div class="pbar ${k===jn.tg?"act":""}"><span title="phase ${k}, ${fromDir(j.phases[k][0])}">${phName(j.id,k)}</span><span class="b"><i style="width:${Math.abs(v)/mx*100}%;background:${v<0?"#7f3b3b":k===jn.tg?"#3b82f6":"#475569"}"></i></span><span class="num" style="text-align:right">${v.toFixed(1)}</span></div>`).join("")}
+  <div class="ra"><div>Requested<b>${jn.rq==null?"–":phName(j.id,jn.rq)}</b></div><div class="${jn.rq!=null&&jn.rq!==jn.tg?"diff":""}">Approved<b>${phName(j.id,jn.tg)}</b></div></div>`});
  // detail
  const j=S.selJ,jd=JN[j],jn=f.jn[j],e=explain(S.view,j),pr=pressures(f,j),c=L.controller_cfg;
  let rows="";jd.phases.forEach((ph,i)=>{for(const a of ph){const s=f.app[a]||{},d=DOWN[a],tv=termOf(f,a),occ=d?q0(f,d)/AP[d].storage:null;
    rows+=`<tr><td>Phase ${i} · ${a}${s.ov?' <span class="mini vs">VS</span>':""}${s.tr>0?` <span class="mini ${TRK[s.tr]}">${TRN[s.tr]}</span>`:""}</td><td>${pcu(s.est)}</td><td>${d?`${d} · ${pcu(q0(f,d))}`:'<span class="mute">leaves corridor</span>'}</td><td>${occ==null?"–":Math.round(occ*100)+" %"}</td><td class="${tv.gated?"g":""}">${tv.v.toFixed(1)}${tv.gated?" (gated)":""}</td></tr>`}
-  rows+=`<tr class="sum"><td>Phase ${i} pressure</td><td></td><td></td><td></td><td>${pr[i].toFixed(1)}</td></tr>`});
+  rows+=`<tr class="sum"><td>${phLong(j,i)} pressure</td><td></td><td></td><td></td><td>${pr[i].toFixed(1)}</td></tr>`});
  const gated=jd.phases.flat().filter(a=>termOf(f,a).gated);
  $("jdetail").innerHTML=`<h3>Decision at ${j} · t = ${fmtT(f.t)}<span class="r"><span class="chip acc">${esc(L.controller)}</span></span></h3>
   <div class="why ${e.hold?"hold":""}">${e.t}${gated.length?`<div class="x">Spillback gate: ${gated.map(a=>`${a} feeds ${DOWN[a]}, which holds at least ${Math.round(c.capacity.spillback_occupancy*100)} % of its storage`).join("; ")}, so ${gated.length>1?"they add":"it adds"} no positive pressure.</div>`:""}</div>
@@ -1003,14 +1009,15 @@ function controllerPage(){
  // phase timeline
  const [g,W,H]=fit($("ptlc"));g.clearRect(0,0,W,H);const t1=f.t,x0=Math.max(0,t1-300),x1=Math.max(300,t1),l=34,r=8,X=t=>l+(t-x0)/(x1-x0)*(W-l-r),rh=(H-20)/3;
  g.font="12px Segoe UI,system-ui";JIDS.forEach((jj,ri)=>{const y=ri*rh+4;g.fillStyle=jj===j?"#e7eef8":"#97a6bc";g.fillText(jj,0,y+rh/2+2);
-  let s0=null,c0=null;const ivs=[];const flush=t=>{if(c0){g.fillStyle=c0;g.fillRect(X(s0),y,Math.max(1,X(t)-X(s0)),rh-10)}};
+  let s0=null,c0=null,s0ph=0;const ivs=[];const flush=t=>{if(c0){const w=Math.max(1,X(t)-X(s0));g.fillStyle=c0;g.fillRect(X(s0),y,w,rh-10);
+   if(c0!=="#64748b"&&w>46){g.fillStyle="#0b1424";g.font="600 10.5px Segoe UI,system-ui";g.fillText(phName(jj,s0ph),X(s0)+4,y+rh/2);g.font="12px Segoe UI,system-ui"}}};
   for(let i=idxAt(x0);i<=S.view;i++){const fr=S.F[i],q=fr.jn[jj];if(!q)continue;const settled=q.st==="green"&&q.ph===q.tg;
-   const c=settled?["#3b82f6","#f59e0b","#8b5cf6"][q.ph%3]:"#64748b";if(c!==c0){flush(fr.t);s0=fr.t;c0=c}if(q.iv)ivs.push(fr.t)}
+   const c=settled?PHC[q.ph%PHC.length]:"#64748b";if(c!==c0){flush(fr.t);s0=fr.t;c0=c;s0ph=q.ph}if(q.iv)ivs.push(fr.t)}
   flush(S.F[S.view].t+1);g.fillStyle="#ef4444";for(const t of ivs)g.fillRect(X(t),y-2,2,rh-6)});
  g.fillStyle="#6b7b93";g.font="11px Segoe UI,system-ui";const xs=niceStep(x1-x0,6);for(let s=Math.ceil(x0/xs)*xs;s<=x1;s+=xs){const lb=fmtT(s);g.fillText(lb,Math.min(X(s)-10,W-g.measureText(lb).width-2),H-3)}
  g.fillStyle="#e7eef8";g.fillRect(X(t1),0,1.5,H-16);
  const log=S.EV.filter(e=>e.j&&e.t<=t1).slice(-60).reverse();
- $("clog").innerHTML=log.length?log.map(e=>`<div data-t="${e.t}"><span class="mute num">${fmtT(e.t)}</span><span><b>${e.j}</b> ${e.k==="switch"?`phase ${e.from} → ${e.to}`:`<span style="color:var(--warn)">envelope ${esc(e.iv.replace("_"," "))}</span>: controller wanted phase ${e.rq}, approved ${e.tg}`}</span></div>`).join(""):'<span class="note">No phase changes yet.</span>';
+ $("clog").innerHTML=log.length?log.map(e=>`<div data-t="${e.t}"><span class="mute num">${fmtT(e.t)}</span><span><b>${e.j}</b> ${e.k==="switch"?`${phName(e.j,e.from)} → ${phName(e.j,e.to)}`:`<span style="color:var(--warn)">envelope ${esc(e.iv.replace("_"," "))}</span>: controller wanted ${phName(e.j,e.rq)}, approved ${phName(e.j,e.tg)}`}</span></div>`).join(""):'<span class="note">No phase changes yet.</span>';
 }
 for(let i=0;i<3;i++)$("jc-"+i).addEventListener("click",e=>{const j=e.currentTarget.dataset.j;if(j){selectJ(j);schedule()}});
 $("clog").addEventListener("click",e=>{const d=e.target.closest("[data-t]");if(d)seekTo(idxAt(+d.dataset.t))});
@@ -1021,7 +1028,9 @@ async function loadResearch(){
  try{const r=await fetch("/api/results",{cache:"no-store"});S.research=await r.json()}catch(e){S.research={error:String(e)}}
  clearTimeout(rTimer);if(S.research&&S.research.scoring>0)rTimer=setTimeout(()=>{if(S.page==="research")loadResearch()},3000);
  research()}
-const scen=s=>s.faults||"clean";
+// demand scenario of a run: recorded since D32; older runs only name it in the demand file path
+const demandOf=s=>s.demand||((/demand\/([^/]+)\/corridor_seed/.exec(s.demand_file||"")||[])[1])||"normal";
+const scen=s=>{const d=demandOf(s);return d==="normal"?(s.faults||"clean"):(s.faults?`${d} + ${s.faults}`:`${d} demand`)};
 const setOf=r=>r.group?r.group.split("/")[0]:"dashboard runs";
 const mean=a=>a.length?sum(a)/a.length:null;
 const METRICS={delay:["Average delay","s",s=>s.avg_delay_s,1],throughput:["Throughput","veh/h",s=>s.throughput_veh_per_h,0],

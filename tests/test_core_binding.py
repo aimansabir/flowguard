@@ -60,12 +60,15 @@ def test_errors_become_value_errors(corridor_path: Path, corridor: Corridor) -> 
 def test_fixed_plan_through_core(corridor_path: Path) -> None:
     core = make(corridor_path, "fixed")
     stages: list[tuple[int, str]] = []
-    for t in range(80):
+    for t in range(100):
         out = StepOutput.model_validate_json(core.step(float(t), "[]"))
         stages.append((out.commands[0].phase_index, out.commands[0].stage))
-    assert stages[39] == (0, "green") and stages[40] == (0, "yellow")
-    assert stages[43] == (0, "all_red") and stages[45] == (1, "green")
-    assert stages[65] == (1, "yellow") and stages[70] == (0, "green")
+    # config/fixed.json: 25, 25, 10, 10 s green, one approach each (D32), 3 s yellow + 2 s all-red between
+    assert stages[24] == (0, "green") and stages[25] == (0, "yellow")
+    assert stages[28] == (0, "all_red") and stages[30] == (1, "green")
+    assert stages[55] == (1, "yellow") and stages[60] == (2, "green")
+    assert stages[70] == (2, "yellow") and stages[75] == (3, "green")
+    assert stages[85] == (3, "yellow") and stages[90] == (0, "green")
 
 
 def test_hysteresis_config_through_core(corridor_path: Path) -> None:
@@ -76,7 +79,7 @@ def test_hysteresis_config_through_core(corridor_path: Path) -> None:
     first = StepOutput.model_validate_json(core.step(0.0, json.dumps(side)))
     assert first.requests["J1"] == 0
     basic = StepOutput.model_validate_json(make(corridor_path).step(0.0, json.dumps(side)))
-    assert basic.requests["J1"] == 1
+    assert basic.requests["J1"] == 2  # N1_J1's own phase (one phase per approach, D32)
     bad = json.loads(core_config("maxpressure_hyst").model_dump_json())
     bad["controller"]["hysteresis"]["gain_pcu"] = -1
     with pytest.raises(ValueError, match="gain_pcu"):

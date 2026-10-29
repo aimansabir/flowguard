@@ -34,7 +34,7 @@ from flowguard_core import Core
 from flowguard_sim import webster
 from flowguard_sim.conflicts import read_conflicts
 from flowguard_sim.corridor import load_corridor
-from flowguard_sim.demand import ensure_demand
+from flowguard_sim.demand import demand_config, ensure_demand
 from flowguard_sim.faults import FaultInjector, load_scenario
 from flowguard_sim.metrics import RunMetrics
 from flowguard_sim.observer import SimObserver
@@ -43,7 +43,7 @@ from flowguard_sim.signals import SignalApplier
 from flowguard_sim.sumo_env import sumo_binary
 
 CONTROLLERS = ("fixed", "fixed_webster", "fixed_webster_wave",
-               "maxpressure", "maxpressure_hyst", "maxpressure_hyst_cap")
+               "maxpressure", "maxpressure_hyst", "maxpressure_hyst_cap", "maxpressure_hyst_cap_serve")
 GUARDS = ("passthrough", "v1")
 LOGS = ("truth", "measurements", "states", "commands")
 FROM_CONFIG: Literal["config"] = "config"
@@ -65,6 +65,9 @@ def core_config(controller: str, guard: str = "passthrough") -> CoreConfig:
         ctl = {"kind": "maxpressure", "hysteresis": mp["hysteresis"]}
     elif controller == "maxpressure_hyst_cap":
         ctl = {"kind": "maxpressure", "hysteresis": mp["hysteresis"], "capacity": mp["capacity"]}
+    elif controller == "maxpressure_hyst_cap_serve":
+        ctl = {"kind": "maxpressure", "hysteresis": mp["hysteresis"], "capacity": mp["capacity"],
+               "serve_queue": mp["serve_queue"]}
     else:
         raise ValueError(f"unknown controller {controller!r}")
     return CoreConfig.model_validate({
@@ -96,10 +99,11 @@ class StepEvent:
 def run(controller: str, seconds: int, seed: int, results_dir: Path = ROOT / "results",
         camera_zone_m: float | None | Literal["config"] = FROM_CONFIG,
         faults: str | None = None, guard: str = "passthrough",
-        on_step: Callable[[StepEvent], None] | None = None) -> dict[str, Any]:
+        on_step: Callable[[StepEvent], None] | None = None, demand: str | None = None) -> dict[str, Any]:
     """camera_zone_m: metres the simulated camera sees; None = the whole edge;
     FROM_CONFIG = take it from config/sim.json. faults: scenario name in
-    config/faults/, None = clean camera. guard: see core_config. on_step runs
+    config/faults/, None = clean camera. guard: see core_config. demand: scenario
+    in config/demand_scenarios/, None = config/demand.json. on_step runs
     each second after the commands are applied and before SUMO advances, so
     traci state still matches t."""
     if seconds <= 0:
@@ -108,7 +112,8 @@ def run(controller: str, seconds: int, seed: int, results_dir: Path = ROOT / "re
     zone: float | None = sim_cfg["camera_zone_m"] if camera_zone_m == FROM_CONFIG else camera_zone_m
     corridor_path = ROOT / sim_cfg["corridor_file"]
     corridor = load_corridor(corridor_path)
-    demand = ensure_demand(seed, corridor, load_json("config/demand.json"), ROOT / sim_cfg["demand_dir"])
+    demand_cfg, demand_dir, demand_label = demand_config(demand, ROOT / sim_cfg["demand_dir"])
+    demand_file = ensure_demand(seed, corridor, demand_cfg, demand_dir, demand_label)
     injector = FaultInjector(load_scenario(faults, corridor, zone) if faults else None)
 
     core = Core(corridor_path.read_text(), core_config(controller, guard).model_dump_json())
@@ -128,7 +133,7 @@ def run(controller: str, seconds: int, seed: int, results_dir: Path = ROOT / "re
         sumo_binary("sumo"),
         "--net-file", str(ROOT / sim_cfg["net_file"]),
         "--additional-files", str(ROOT / sim_cfg["vtypes_file"]),
-        "--route-files", str(demand),
+        "--route-files", str(demand_file),
         "--step-length", "1",
         "--lateral-resolution", str(sim_cfg["lateral_resolution_m"]),
         "--time-to-teleport", str(sim_cfg["time_to_teleport_s"]),
@@ -189,9 +194,10 @@ def run(controller: str, seconds: int, seed: int, results_dir: Path = ROOT / "re
         "seed": seed,
         "seconds": seconds,
         "camera_zone_m": zone,
-        "demand_file": demand.relative_to(ROOT).as_posix(),
+        "demand": demand or "normal",
+        "demand_file": demand_file.relative_to(ROOT).as_posix(),
         # line endings normalised so Windows and Linux checkouts hash the same
-        "demand_sha256": hashlib.sha256(demand.read_bytes().replace(b"\r\n", b"\n")).hexdigest(),
+        "demand_sha256": hashlib.sha256(demand_file.read_bytes().replace(b"\r\n", b"\n")).hexdigest(),
         **metrics.summary(out / "tripinfo.xml", end_time, departed),
         "vehicles_in_network_at_end": in_network,
         "teleports": teleports,
@@ -227,7 +233,9 @@ if __name__ == "__main__":
                         help="fault scenario name in config/faults/ (default: no faults)")
     parser.add_argument("--guard", choices=GUARDS, default="passthrough",
                         help="Guard rating the measurements (default: passthrough)")
+    parser.add_argument("--demand", metavar="SCENARIO",
+                        help="demand scenario in config/demand_scenarios/ (default: config/demand.json)")
     args = parser.parse_args()
     print_summary(run(args.controller, args.seconds, args.seed,
                       camera_zone_m=None if args.full_edge else FROM_CONFIG, faults=args.faults,
-                      guard=args.guard))
+                      guard=args.guard, demand=args.demand))

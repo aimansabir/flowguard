@@ -197,6 +197,28 @@ class Capacity(BaseModel):
     """
 
 
+class ServeQueue(BaseModel):
+    """
+    Actuated extension for max-pressure (D32): keep the green on an approach
+    that is still discharging a queue. With one phase per approach every
+    switch costs a clearance, so ending a green while its queue still flows
+    at saturation throws capacity away. The envelope's max red still applies.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    hold_pcu_per_lane: float
+    """
+    Keep the current phase while one of its approaches still has at least
+    this queue per lane (PCU) and a positive pressure term (it can move).
+    """
+    max_green_s: float
+    """
+    Longest green the extension keeps, s.
+    """
+
+
 class PassthroughGuardConfig(BaseModel):
     """
     Trust every measurement as it is (the naive adaptive baseline).
@@ -580,6 +602,7 @@ class MaxPressureControllerConfig(BaseModel):
     kind: Literal["maxpressure"]
     hysteresis: Hysteresis | None = None
     capacity: Capacity | None = None
+    serve_queue: ServeQueue | None = None
 
 
 class ResponseEvidence(BaseModel):

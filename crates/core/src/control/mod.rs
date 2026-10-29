@@ -49,8 +49,8 @@ pub fn make_controller(
         ControllerConfig::Fixed { green_s, offsets_s } => {
             Box::new(FixedTime::new(corridor, green_s, &offsets_s.clone().unwrap_or_default(), timing.clearance_s())?)
         }
-        ControllerConfig::MaxPressure { hysteresis, capacity } => {
-            Box::new(MaxPressure::new(corridor, *hysteresis, *capacity, timing.min_green_s)?)
+        ControllerConfig::MaxPressure { hysteresis, capacity, serve_queue } => {
+            Box::new(MaxPressure::new(corridor, *hysteresis, *capacity, timing.min_green_s)?.serving(*serve_queue)?)
         }
     })
 }

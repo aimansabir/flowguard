@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use super::{Controller, DecisionInput};
-use crate::contracts::{Capacity, Command, Hysteresis, Stage};
+use crate::contracts::{Capacity, Command, Hysteresis, ServeQueue, Stage};
 use crate::corridor::CorridorIndex;
 use crate::error::{Error, Result};
 
@@ -26,6 +26,13 @@ use crate::error::{Error, Result};
 /// traffic into a full link. Its term becomes min(queue - downstream, 0).
 /// Pressure stays in PCU, so hysteresis gains mean the same with or without.
 ///
+/// With serve_queue (D32, actuated extension) a settled green that has run
+/// min green is kept, whatever the pressures say, while one of its
+/// approaches still has `hold_pcu_per_lane` x lanes queued and a positive
+/// term, up to `max_green_s` of green: with one phase per approach every
+/// switch costs a clearance, so a green is not cut while its queue still
+/// discharges. The envelope's max red overrides it as it overrides any wish.
+///
 /// Known simplification (next work, see docs/specs/control.md): turning
 /// traffic is not split out; downstream is the straight-through approach.
 pub struct MaxPressure {
@@ -36,6 +43,9 @@ pub struct MaxPressure {
     /// empty without capacity.
     storage: Vec<f64>,
     min_green_s: f64,
+    serve_queue: Option<ServeQueue>,
+    /// Approach index -> lanes, for serve_queue.
+    lanes: Vec<f64>,
 }
 
 impl MaxPressure {
@@ -66,7 +76,35 @@ impl MaxPressure {
         if capacity.is_some() {
             name.push_str("_cap");
         }
-        Ok(MaxPressure { name, hysteresis, capacity, storage, min_green_s })
+        let lanes = corridor.corridor.approaches.iter().map(|a| f64::from(a.lanes)).collect();
+        Ok(MaxPressure { name, hysteresis, capacity, storage, min_green_s, serve_queue: None, lanes })
+    }
+
+    /// Adds the actuated extension (None leaves the controller as it is).
+    pub fn serving(mut self, serve_queue: Option<ServeQueue>) -> Result<Self> {
+        if let Some(q) = serve_queue {
+            let ok = q.hold_pcu_per_lane.is_finite() && q.hold_pcu_per_lane > 0.0
+                && q.max_green_s.is_finite() && q.max_green_s >= self.min_green_s;
+            if !ok {
+                return Err(Error::Config(
+                    "max-pressure serve_queue needs hold_pcu_per_lane > 0 and max_green_s >= min green".into(),
+                ));
+            }
+            self.name.push_str("_serve");
+        }
+        self.serve_queue = serve_queue;
+        Ok(self)
+    }
+
+    /// True while the current settled green should be kept for its queue.
+    fn still_serving(&self, input: &DecisionInput<'_>, j: usize, last: Option<&Command>) -> bool {
+        let (Some(q), Some(c)) = (self.serve_queue, last) else { return false };
+        c.stage == Stage::Green
+            && c.phase_index == c.target_phase
+            && input.t - c.phase_started_at < q.max_green_s
+            && input.corridor.phases[j][c.target_phase]
+                .iter()
+                .any(|&a| self.term(input, a) > 0.0 && input.queue(a) >= q.hold_pcu_per_lane * self.lanes[a])
     }
 
     /// Pressure term of one approach.
@@ -117,6 +155,7 @@ impl Controller for MaxPressure {
                 Some(h) if pressures[best] - pressures[current] <= h.gain_pcu => current,
                 Some(_) => best,
             };
+            let wish = if wish != current && self.still_serving(input, j, last) { current } else { wish };
             requests.insert(junction.id.clone(), wish);
         }
         requests
@@ -193,6 +232,42 @@ mod tests {
 
     fn decide(queues: [f64; 4], last: [Option<Command>; 2]) -> BTreeMap<String, usize> {
         decide_with(&mut basic(), 0.0, queues, last)
+    }
+
+    fn serve(hold_pcu_per_lane: f64, max_green_s: f64) -> MaxPressure {
+        MaxPressure::new(&ix(), Some(Hysteresis { gain_pcu: 2.0 }), None, 10.0)
+            .unwrap()
+            .serving(Some(ServeQueue { hold_pcu_per_lane, max_green_s }))
+            .unwrap()
+    }
+
+    #[test]
+    fn serve_queue_keeps_a_green_while_its_queue_discharges() {
+        // a_w (2 lanes) green since 0 with 6 PCU still queued; a_n leads by 14 PCU
+        let q = [6.0, 20.0, 0.0, 0.0];
+        let at = |t: f64, mp: &mut MaxPressure| decide_with(mp, t, q, [green(0, 0.0), green(0, 0.0)])["A"];
+        assert_eq!(at(15.0, &mut hyst(2.0)), 1); // without the extension: switch
+        let mut mp = serve(2.0, 40.0);
+        assert_eq!(mp.name(), "maxpressure_hyst_serve");
+        assert_eq!(at(15.0, &mut mp), 0); // 3 PCU per lane left: keep serving
+        assert_eq!(at(40.0, &mut mp), 1); // max green reached
+        let short = [3.0, 20.0, 0.0, 0.0]; // 1.5 PCU per lane: queue served
+        assert_eq!(decide_with(&mut mp, 15.0, short, [green(0, 0.0), green(0, 0.0)])["A"], 1);
+    }
+
+    #[test]
+    fn serve_queue_does_not_hold_a_green_that_cannot_discharge() {
+        // a_w's queue feeds b_w, which holds more: term negative, nothing would move
+        let q = [6.0, 20.0, 9.0, 0.0];
+        assert_eq!(decide_with(&mut serve(2.0, 40.0), 15.0, q, [green(0, 0.0), green(0, 0.0)])["A"], 1);
+    }
+
+    #[test]
+    fn serve_queue_is_validated() {
+        let mp = || MaxPressure::new(&ix(), None, None, 10.0).unwrap();
+        assert!(mp().serving(Some(ServeQueue { hold_pcu_per_lane: 0.0, max_green_s: 40.0 })).is_err());
+        assert!(mp().serving(Some(ServeQueue { hold_pcu_per_lane: 2.0, max_green_s: 5.0 })).is_err());
+        assert!(mp().serving(None).is_ok());
     }
 
     #[test]

@@ -1,4 +1,4 @@
 {
-  "_note": "Fixed-time plan, green seconds per phase (0 = main road, 1 = side street). Cycle = sum + one yellow/all-red per phase = 70 s.",
-  "green_s": [40, 20]
+  "_note": "Fixed-time plan, green seconds per phase. Phases are exclusive by approach (decisions.md D32), in the same order at every junction: 0 from the west (main road), 1 from the east (main road), 2 from the north (side street), 3 from the south (side street). Cycle = sum + one yellow/all-red per phase = 90 s; the longest red, 77 s on a side street, stays under max red (90 s).",
+  "green_s": [25, 25, 10, 10]
 }

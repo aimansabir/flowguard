@@ -80,10 +80,12 @@ def test_vision_measurements_drive_the_guard(corridor: Corridor) -> None:
     by_t = {s.time: s for s in states}
     # healthy image: trusted throughout the first minute
     assert all(by_t[t].trust_state == "TRUSTED" for t in by_t if 5 <= t < 60)
-    # frozen image: the camera's own health report is weak evidence (E1):
-    # suspect while it lasts, never faulty on that alone
+    # frozen image: the camera's own health report (E1) makes it suspect. W_J1 is the only
+    # approach with traffic, so with one phase per approach (D32) it holds the green, and a
+    # frozen camera on a green approach also shows a stalled green (E4): together they rightly
+    # make it faulty. Either way the fault is flagged during the freeze, never before it.
     frozen = [by_t[t].trust_state for t in by_t if 70 <= t < 90]
-    assert "SUSPECT" in frozen and "FAULTY" not in frozen
+    assert frozen[0] != "TRUSTED" and set(frozen) <= {"SUSPECT", "FAULTY"} and "SUSPECT" in frozen
     # the camera is still used while suspect, with a wider margin
     s = next(by_t[t] for t in by_t if 70 <= t < 90 and by_t[t].trust_state == "SUSPECT")
     assert not s.override_flag and s.queue_estimate == s.measured_queue_pcu

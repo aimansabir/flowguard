@@ -1,5 +1,6 @@
 {
-  "_note": "Max-pressure options: hysteresis (docs/decisions.md D20) and capacity (D22). Used by --controller maxpressure_hyst (hysteresis) and maxpressure_hyst_cap (both); plain maxpressure stays the basic version. gain_pcu: switch only when the best phase beats the current one by more than this many PCU. capacity (D22): an approach adds no positive pressure while the approach it feeds holds at least spillback_occupancy x (length x lanes / jam_spacing_m) PCU. jam_spacing_m is a PLACEHOLDER.",
+  "_note": "Max-pressure options: hysteresis (docs/decisions.md D20), capacity (D22) and serve_queue (D32). Used by --controller maxpressure_hyst (hysteresis), maxpressure_hyst_cap (both) and maxpressure_hyst_cap_serve (all three); plain maxpressure stays the basic version. gain_pcu: switch only when the best phase beats the current one by more than this many PCU. capacity (D22): an approach adds no positive pressure while the approach it feeds holds at least spillback_occupancy x (length x lanes / jam_spacing_m) PCU. jam_spacing_m is a PLACEHOLDER. serve_queue (D32): keep a green while its approach still has hold_pcu_per_lane x lanes queued and can discharge, up to max_green_s; the envelope's max red still applies.",
   "hysteresis": {"gain_pcu": 8},
-  "capacity": {"jam_spacing_m": 7.5, "spillback_occupancy": 0.9}
+  "capacity": {"jam_spacing_m": 7.5, "spillback_occupancy": 0.9},
+  "serve_queue": {"hold_pcu_per_lane": 2.0, "max_green_s": 45}
 }

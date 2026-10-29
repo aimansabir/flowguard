@@ -84,8 +84,11 @@ Demand per seed is generated once into `data/demand/` and reused, so every
 controller sees the same vehicles. Rebuild the network after editing
 `data/net/*.nod.xml` / `*.edg.xml`: `uv run python -m flowguard_sim.build_net`.
 The network drives on the left, as in Karachi (`driving_side` in
-`config/sim.json`); which turning movements are protected or must give way
-comes from SUMO's conflict matrix (docs/decisions.md D29).
+`config/sim.json`). Signals are exclusive by approach: each junction has one
+phase per incoming approach, so only one approach is green at a time and all
+of its movements are protected (docs/decisions.md D32); conflicts are checked
+against SUMO's conflict matrix (D29). Demand scenarios for experiments are in
+`config/demand_scenarios/` (`--demand heavy|uneven|right_turn|main_heavy`).
 
 ## Camera faults
 

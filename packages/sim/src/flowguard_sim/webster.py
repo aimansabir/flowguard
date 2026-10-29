@@ -14,7 +14,9 @@ core as an ordinary `fixed` controller config (green_s, offsets_s). D21.
 3. Lost time L = one yellow + all-red per phase. Cycle
    C = (1.5 L + 5) / (1 - Y), clamped to [min_cycle_s, max_cycle_s].
 4. Greens share C - L in proportion to y, rounded to whole seconds, at least
-   min green. The cycle is then recomputed from the rounded greens.
+   min green. The cycle is then recomputed from the rounded greens. If a
+   phase would then be red longer than max red (likely with one phase per
+   approach, D32), the cycle is shortened until every red fits.
 5. Green wave (optional): each junction's plan starts later by the travel
    time from the first junction along the main road, at `speed_mps`.
 """
@@ -26,7 +28,7 @@ from typing import Any
 from flowguard_contracts import Approach, Corridor
 from flowguard_contracts.models import SignalTiming
 from flowguard_sim.corridor import load_corridor
-from flowguard_sim.demand import destinations, rate_per_s
+from flowguard_sim.demand import destinations, entry_base_per_h, rate_per_s
 from flowguard_sim.paths import ROOT, load_json, without_notes
 
 
@@ -63,7 +65,7 @@ def approach_flows(corridor: Corridor, demand: dict[str, Any], pcu: dict[str, fl
     pcu_per_veh = sum(share * pcu[c] for c, share in mix.items()) / sum(mix.values())
     flows = {a.id: 0.0 for a in corridor.approaches}
     for e in corridor.entries:
-        base = demand["main_veh_per_h"] if e.kind == "main" else demand["side_veh_per_h"]
+        base = entry_base_per_h(e.edge, e.kind, demand)
         rate = entry_rate_per_h(base, demand, design) * pcu_per_veh
         for exit_edge, p in destinations(e.edge, corridor, demand).items():
             for a in route(corridor, e.edge, exit_edge):
@@ -84,13 +86,32 @@ def webster_greens(corridor: Corridor, flows: dict[str, float], timing: SignalTi
     total_y = sum(y)
     cycle = cfg["max_cycle_s"] if total_y >= 1 else (1.5 * lost + 5) / (1 - total_y)
     cycle = min(max(cycle, cfg["min_cycle_s"]), cfg["max_cycle_s"])
-    greens = [float(max(math.ceil(timing.min_green_s), round((cycle - lost) * yk / total_y))) for yk in y]
-    cycle = sum(greens) + lost
-    for k, g in enumerate(greens):
-        red = cycle - g - timing.yellow_s
-        if red > timing.max_red_s:
-            raise ValueError(f"phase {k} would be red {red:.0f} s, above max red {timing.max_red_s:.0f} s")
+
+    def split(c: float) -> list[float]:
+        return [float(max(math.ceil(timing.min_green_s), round((c - lost) * yk / total_y))) for yk in y]
+
+    def worst_red(greens: list[float]) -> float:
+        return max(sum(greens) + lost - g - timing.yellow_s for g in greens)
+
+    # With many phases (exclusive by approach, D32) max red can bind before the
+    # Webster cycle does: then take the longest cycle whose reds all fit.
+    c = math.floor(cycle)
+    while worst_red(split(c)) > timing.max_red_s and c > cfg["min_cycle_s"]:
+        c -= 1
+    greens = split(c)
+    if worst_red(greens) > timing.max_red_s:
+        raise ValueError(f"no cycle from {cfg['min_cycle_s']} s keeps every red under max red "
+                         f"{timing.max_red_s:.0f} s with {n_phases} phases")
     return greens
+
+
+def flow_ratio(corridor: Corridor, flows: dict[str, float], cfg: dict[str, Any]) -> float:
+    """Sum over phases of the critical flow ratio y (above 1: no fixed plan serves the demand)."""
+    by_id = {a.id: a for a in corridor.approaches}
+    sat: float = cfg["saturation_pcu_per_h_per_lane"]
+    n = len(corridor.junctions[0].phases)
+    return sum(max(flows[a] / (by_id[a].lanes * sat) for j in corridor.junctions for a in j.phases[k])
+               for k in range(n))
 
 
 def green_wave_offsets(corridor: Corridor, entry: str, speed_mps: float, cycle_s: float) -> dict[str, float]:
@@ -132,5 +153,8 @@ if __name__ == "__main__":
     print(f"design flow ({cfg['design_flow']}), PCU/h:")
     for a in corridor.approaches:
         print(f"  {a.id:<6} {flows[a.id]:7.0f}  ({a.lanes} lane{'s' if a.lanes > 1 else ''})")
+    y_total = flow_ratio(corridor, flows, cfg)
+    note = "  (above 1: oversaturated, no fixed plan serves it)" if y_total >= 1 else ""
+    print(f"sum of critical flow ratios Y = {y_total:.2f}{note}")
     print("plan:", plan(green_wave=False))
     print("with green wave:", plan(green_wave=True))

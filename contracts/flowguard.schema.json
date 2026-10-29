@@ -805,6 +805,16 @@
                   "type": "null"
                 }
               ]
+            },
+            "serve_queue": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ServeQueue"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             }
           },
           "additionalProperties": false,
@@ -848,6 +858,27 @@
       "required": [
         "jam_spacing_m",
         "spillback_occupancy"
+      ]
+    },
+    "ServeQueue": {
+      "description": "Actuated extension for max-pressure (D32): keep the green on an approach\nthat is still discharging a queue. With one phase per approach every\nswitch costs a clearance, so ending a green while its queue still flows\nat saturation throws capacity away. The envelope's max red still applies.",
+      "type": "object",
+      "properties": {
+        "hold_pcu_per_lane": {
+          "description": "Keep the current phase while one of its approaches still has at least\nthis queue per lane (PCU) and a positive pressure term (it can move).",
+          "type": "number",
+          "format": "double"
+        },
+        "max_green_s": {
+          "description": "Longest green the extension keeps, s.",
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "hold_pcu_per_lane",
+        "max_green_s"
       ]
     },
     "GuardConfig": {

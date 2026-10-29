@@ -43,19 +43,22 @@ def test_approach_flows(corridor: Corridor) -> None:
 
 
 def test_webster_formula(corridor: Corridor) -> None:
-    # y = 720/1800 = 0.4 main, 360/1800 = 0.2 side; L = 10; C = (15 + 5) / 0.4 = 50
-    # greens share 40 s as 2:1 -> 26.7, 13.3 -> rounded 27, 13
-    assert webster.webster_greens(corridor, flows(corridor, 720, 360), TIMING, CFG) == [27.0, 13.0]
+    # one phase per approach (D32): y = 0.2 for each main-road direction, 0.1 for each side
+    # street, Y = 0.6; L = 4 x 5 = 20; C = (30 + 5) / 0.4 = 87.5; greens share 67.5 s as
+    # 2:2:1:1 -> 22.5, 22.5, 11.25, 11.25 -> rounded 22, 22, 11, 11
+    greens = webster.webster_greens(corridor, flows(corridor, 360, 180), TIMING, CFG)
+    assert greens == [22.0, 22.0, 11.0, 11.0]
 
 
 def test_min_green_and_cycle_limits(corridor: Corridor) -> None:
     # light side street: its share is under min green
-    assert webster.webster_greens(corridor, flows(corridor, 720, 36), TIMING, CFG)[1] == 10.0
-    # oversaturated (Y >= 1): longest allowed cycle, 120 - 10 split 1:1
-    assert webster.webster_greens(corridor, flows(corridor, 1800, 1800), TIMING, CFG) == [55.0, 55.0]
-    # nearly empty: shortest allowed cycle
+    assert webster.webster_greens(corridor, flows(corridor, 360, 18), TIMING, CFG)[2:] == [10.0, 10.0]
+    # oversaturated (Y >= 1): the longest cycle whose reds all fit max red (90 s), not the
+    # 120 s maximum: four equal phases of g s are each red 3g + 4 x 5 - 3 s, so g = 24
+    assert webster.webster_greens(corridor, flows(corridor, 1800, 1800), TIMING, CFG) == [24.0] * 4
+    # nearly empty: every phase at min green (four of them no longer fit the 40 s minimum cycle)
     greens = webster.webster_greens(corridor, flows(corridor, 10, 10), TIMING, CFG)
-    assert sum(greens) + 10 == 40
+    assert greens == [10.0] * 4
 
 
 def test_rejects_plans_over_max_red(corridor: Corridor) -> None:
@@ -77,5 +80,5 @@ def test_green_wave_offsets(corridor: Corridor) -> None:
 @pytest.mark.parametrize("controller", ["fixed_webster", "fixed_webster_wave"])
 def test_plan_is_a_valid_core_config(controller: str) -> None:
     ctl = core_config(controller).controller.model_dump()
-    assert ctl["kind"] == "fixed" and len(ctl["green_s"]) == 2
+    assert ctl["kind"] == "fixed" and len(ctl["green_s"]) == 4  # one phase per approach (D32)
     assert (ctl["offsets_s"] is not None) == (controller == "fixed_webster_wave")

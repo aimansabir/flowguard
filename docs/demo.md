@@ -113,8 +113,9 @@ Five views share one stream: switching between them does not restart the
 simulation, and the selected camera and junction carry over.
 
 - **Overview**: the corridor from the SUMO network (Karachi left-hand
-  traffic), vehicles by class (red tail = stopped), stop-line bars in SUMO's
-  own signal colours (light dot = give-way green), camera zones coloured by
+  traffic), vehicles by class (red tail = stopped), stop-line bars and
+  signal heads in SUMO's own signal colours (one approach per junction is
+  green at a time; all its movements are protected, D32), camera zones coloured by
   the Guard (blue trusted, amber suspect, red faulty) with `VIRTUAL` where
   the controller is fed the virtual sensor and `NO DATA` where a measurement
   did not arrive. Click a camera to open it in Guard, a junction badge to
@@ -133,9 +134,10 @@ simulation, and the selected camera and junction carry over.
   core), a queue chart with the fault interval and trust transitions, a
   timeline, recovery status, and the E1-E5 evidence from the parity-tested
   Python copy (E6 and the combined score live only in the core).
-- **Controller (Module 3)**: per junction the stage, time in phase against
-  the minimum green, the pressure of each phase, requested against approved
-  phase; for the selected junction the reason for keeping or switching
+- **Controller (Module 3)**: per junction the green approach, the stage,
+  time in phase against the minimum green, the pressure of each approach
+  (one phase per approach, D32), requested against approved approach; for
+  the selected junction the reason for keeping or switching
   (hysteresis, spillback gate, envelope), the pressure calculation, a phase
   timeline and the decision log. Parameters are under a fold.
 - **Research**: the experiment sets under `results\`: completed runs,

@@ -116,14 +116,13 @@ def test_network_drives_on_the_configured_side() -> None:
 def test_every_phase_is_movement_safe(junction: Junction) -> None:
     conflicts = read_conflicts(NET, [junction.id])[junction.id]
     check_phases(junction, conflicts)
-    crossing = "r" if LEFT_HAND else "l"
     for phase, approaches in enumerate(junction.phases):
         s = state_string(junction, cmd(phase, "green", junction.id), conflicts)
         for i, link in enumerate(junction.links):
-            if link.approach in approaches:
-                # the turn across oncoming traffic gives way; straight on and
-                # the nearside turn cross nothing that is green with them
-                assert s[i] == ("g" if link.direction == crossing else "G"), (phase, link)
+            # one approach per phase (D32): every movement of it is protected,
+            # the turn across oncoming traffic included (oncoming is red);
+            # everything else is red
+            assert s[i] == ("G" if link.approach in approaches else "r"), (phase, link)
 
 
 def test_direction_rule_would_conflict_in_left_hand_traffic() -> None:
@@ -132,10 +131,65 @@ def test_direction_rule_would_conflict_in_left_hand_traffic() -> None:
     opposing straight."""
     if not LEFT_HAND:
         pytest.skip("right-hand network")
-    for junction in CORRIDOR.junctions:
+    for exclusive in CORRIDOR.junctions:
+        # the phases that rule was used with: both main-road directions together
+        p = exclusive.phases
+        junction = Junction.model_validate({**exclusive.model_dump(), "phases": [p[0] + p[1], p[2] + p[3]]})
         conflicts = read_conflicts(NET, [junction.id])[junction.id]
         c = cmd(0, "green", junction.id)
         lit = [light(junction, link.approach, c) for link in junction.links]
         old = "".join("g" if x == "G" and link.direction in ("l", "L", "t") else x
                       for x, link in zip(lit, junction.links, strict=True))
         assert protected_conflicts(old, conflicts) != []
+
+
+# ---- exclusive approach phases (decisions.md D32): one approach green per junction ----
+
+EXCLUSIVE = Junction.model_validate({**JUNCTION.model_dump(), "phases": [["e"], ["w"], ["n"], ["s"]]})
+
+
+def lit_approaches(junction: Junction, state: str) -> set[str]:
+    return {junction.links[i].approach for i, ch in enumerate(state) if ch in "Gg"}
+
+
+def test_exclusive_phase_lights_one_approach_and_protects_its_right_turn() -> None:
+    for phase, approach in enumerate(["e", "w", "n", "s"]):
+        s = state_string(EXCLUSIVE, cmd(phase, "green"), CONFLICTS)
+        assert lit_approaches(EXCLUSIVE, s) == {approach}
+        assert "g" not in s  # nothing to give way to: the opposing approach is red
+        assert protected_conflicts(s, CONFLICTS) == []
+    # e right: permissive while w shared the green, protected now
+    assert state_string(EXCLUSIVE, cmd(0, "green"), CONFLICTS)[2] == "G"
+    check_phases(EXCLUSIVE, CONFLICTS)
+
+
+def test_exclusive_transitions_clear_only_the_lit_approach() -> None:
+    for phase in range(4):
+        y = state_string(EXCLUSIVE, cmd(phase, "yellow"), CONFLICTS)
+        yellow = {EXCLUSIVE.links[i].approach for i, ch in enumerate(y) if ch == "y"}
+        assert yellow == {["e", "w", "n", "s"][phase]}
+        assert set(y) <= {"y", "r"}
+        assert set(state_string(EXCLUSIVE, cmd(phase, "all_red"), CONFLICTS)) == {"r"}
+
+
+def test_a_state_lighting_two_approaches_is_rejected_under_exclusive_phases() -> None:
+    two = "GGGGGGrrr"  # e and w together: allowed by the old phases, not by these
+    assert has_conflicting_greens(EXCLUSIVE, two)
+    assert not has_conflicting_greens(JUNCTION, two)
+
+
+def test_corridor_phases_are_exclusive_and_cover_every_approach() -> None:
+    sim = load_json("config/sim.json")
+    corridor = load_corridor(ROOT / sim["corridor_file"])
+    conflicts = read_conflicts(ROOT / sim["net_file"], [j.id for j in corridor.junctions])
+    for j in corridor.junctions:
+        incoming = {link.approach for link in j.links}
+        assert all(len(p) == 1 for p in j.phases), j.id
+        assert sorted(a for p in j.phases for a in p) == sorted(incoming), j.id
+        check_phases(j, conflicts[j.id])
+        for k, phase in enumerate(j.phases):
+            s = state_string(j, cmd(k, "green", j.id), conflicts[j.id])
+            assert lit_approaches(j, s) == set(phase), (j.id, k, s)
+            # every movement of the lit approach is green, and protected
+            own = [s[i] for i, link in enumerate(j.links) if link.approach == phase[0]]
+            assert set(own) == {"G"}, (j.id, k, s)

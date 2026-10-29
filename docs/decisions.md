@@ -828,3 +828,122 @@ Research view: `GET /api/results` lists the run folders under `--results`
 Guard log with `guard_eval.evaluate` in a separate process, so a live run is
 not slowed. It writes nothing into the run folders; a `guard_eval.json`
 already there is used as is. Findings are labelled preliminary.
+
+## D32. Exclusive approach phases: one approach green per junction (2026-10-29)
+The team's control design for Karachi: a signal never relies on drivers
+giving way to oncoming traffic that has green at the same time. Before this,
+each junction had two phases (main road both directions, side street both
+directions) and the turn across oncoming traffic (the right turn in
+left-hand traffic) was permissive (`g`, D29).
+
+**Phases.** `build_net` now writes one phase per incoming approach, in the
+same order at every junction (from the west, east, north, south: J2 is
+J1_J2, J3_J2, N2_J2, S2_J2), so a fixed plan and its green wave mean the
+same thing everywhere. Only `corridor.json` changes; the SUMO network is
+the same file. Checked against SUMO's conflict matrix (`check_phases`, and
+`tests/test_signals.py`, `tests/test_signals_sumo.py`): each phase lights
+exactly one approach, all of its movements (left, straight, right) are
+protected `G`, none is permissive, no two protected movements conflict,
+yellow covers only the approach being cleared, all-red is all red. A run of
+every controller with smoke faults checked from the commands issued: at
+most one approach lit, min green, 3 s yellow + 2 s all-red before every
+change, every approach served.
+
+**Safety envelope, max red with more than two phases.** The old rule ("a red
+phase is due clearance_s before max red") is only correct for two phases. With
+four it failed, shown by new tests before the fix: three red phases fell due
+together and the last waited 75 s against a 60 s max red; and a controller
+that kept asking for the other main-road phase made a voluntary switch that
+pushed a waiting side street past max red (104 s against 90 s in a real run).
+Now (`safety.rs`): the red phases are ordered red-the-longest first and the
+k-th can be green no sooner than one clearance + k x (min green + clearance)
+after the current green may end; switching starts when any of them would
+otherwise pass max red, and a voluntary switch to another phase is only
+taken if every waiting phase still makes max red after it (else the one red
+the longest is served, counted as a max-red intervention). With two phases
+both rules reduce to the old one (all earlier tests unchanged). The envelope
+refuses a timing whose max red is below all-red + (n - 1) x (min green +
+clearance) for a junction with n phases (47 s for four phases at the current
+timing; max red is 90 s).
+
+**Controllers.** All six variants run unchanged on four phases (max-pressure
+is per phase; with one approach per phase its pressure is that approach's
+term). `config/fixed.json` is now 25, 25, 10, 10 s (cycle 90 s, longest red
+77 s). Webster: with one phase per approach the critical flow ratios of the
+two main-road directions add up instead of sharing a green, and at peak
+demand the sum is Y = 1.06 (above 1: no fixed plan serves it); the plan now
+takes the longest cycle whose reds all fit max red (31, 31, 10, 10 s, cycle
+102 s) instead of failing. New variant `maxpressure_hyst_cap_serve`
+(`serve_queue` in `config/maxpressure.json`): a green that has run min green
+is kept while its approach still has 2 PCU per lane queued and can discharge,
+up to 45 s, because with four phases every switch costs a clearance (actuated
+extension); the envelope's max red still overrides it. The six existing
+variants are unchanged.
+
+**Guard.** The virtual sensor and E4 take "green" from the approved command's
+phase, so departures are only expected from the one lit approach; no change
+needed. The E1-E5 parity fixture was rebuilt (`evidence_replay --fixture`)
+because its phase indices now mean different approaches; Rust and Python
+still agree exactly.
+
+**Demand scenarios** (`config/demand_scenarios/`, `--demand`): heavy (1.5 x),
+uneven (eastbound and from-the-south busier), right_turn (half the main road
+turns, right turns 3 x as often as left), main_heavy (busy main road, quiet
+side streets). Synthetic. Without a scenario the demand files are byte for
+byte as before.
+
+**Measured effect (exploratory: seeds 1-2, one hour each, Guard v1, same
+demand files for both versions; A = two-phase permissive at f3cd6ef, B =
+exclusive).** Mean delay per vehicle, A -> B:
+
+| demand | fixed_webster | maxpressure_hyst_cap |
+|---|---|---|
+| normal | 56 -> 316 s | 169 -> 352 s |
+| heavy (1.5 x) | 249 -> 449 s | 282 -> 503 s |
+| uneven | 91 -> 331 s | 111 -> 321 s |
+| right-turn heavy | 179 -> 273 s | 221 -> 310 s |
+| busy main, quiet side | 139 -> 262 s | 220 -> 365 s |
+
+Throughput falls 4-30 % and the longest wait per vehicle roughly triples
+(e.g. 269 -> 774 s, maxpressure_hyst_cap, normal). Exclusive phasing is worse
+in every scenario; the gap is smallest where right turns dominate (+53 %
+for the fixed plan), the case it is meant for. Causes: the two main-road
+directions no longer share a green, so at peak the corridor is over
+capacity (Y = 1.06); four clearances per cycle instead of two (about 30 %
+of the time in yellow or all-red for max-pressure); and queues longer than
+the 60 m camera zone, which max-pressure cannot see (the zone fills at about
+16 PCU while true queues reach 120). No junction collision between
+movements of different approaches in any of the 70 runs of either version;
+the few junction collisions are vehicles of the same approach side by side
+(SUMO lateral model).
+
+Tried and not adopted, because they did not help: hysteresis gains 16 and
+30 (fewer switches, more max-red overrides, delay no better); passing the
+virtual sensor's queue beyond the zone to the controller
+(`extend_queue_beyond_zone`: adds at most 17 PCU, since a full zone stops
+counting arrivals); max red 120 s instead of 90 s (delay unchanged);
+`serve_queue` (within a few percent of maxpressure_hyst_cap; kept as an
+option, not the default).
+
+**Guard under exclusive phases.** Freeze detection is slower: 23-33 s in A,
+in B, for maxpressure_hyst_cap on seeds 1-2, 141 s and 195 s for two
+of the four freeze episodes and missed for the other two (fixed_webster:
+366 s); in the 5-minute
+smoke scenario 25 s -> 114 s. A frozen camera on a jammed approach shows the
+same unchanging standing queue as a real jam, and E2 caps a standing queue
+at 0.5 by design; the other checks need the approach to get green and send
+traffic, which now happens a quarter of the time. Undercount is caught
+faster (25-31 s). A recalibration of E2's `standing_weight` (0.5, 0.7, 0.9)
+on seed 3 only, kept apart from the evaluation seeds, did not shorten
+detection (48 s at every value) and at 0.9 raised false FAULTY seconds in
+the fault run from 0.40 % to 1.73 %, so the thresholds are unchanged.
+False FAULTY rates on clean seconds stay at 0-0.7 %. Missing measurements
+are still fully covered by the virtual sensor (62 of 62 s in smoke).
+
+**Recommendation.** If the goal is "no movement relies on yielding to
+oncoming traffic with green", a protected-turn plan meets it with far less
+lost capacity: both main-road directions straight and nearside (left) turn
+together (they do not conflict in left-hand traffic, checkable with the
+same conflict matrix), then a protected right-turn phase, then the side
+streets. Not implemented here; exclusive phasing is what was asked for and
+is what this decision records.

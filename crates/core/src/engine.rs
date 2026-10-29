@@ -141,7 +141,7 @@ mod tests {
 
     #[test]
     fn step_weighs_rates_and_commands() {
-        let mut core = Core::new(two_junctions(), config(ControllerConfig::MaxPressure { hysteresis: None, capacity: None })).unwrap();
+        let mut core = Core::new(two_junctions(), config(ControllerConfig::MaxPressure { hysteresis: None, capacity: None, serve_queue: None })).unwrap();
         let out = core.step(0.0, vec![measurement("a_w", "A", 4), measurement("a_n", "A", 1)]).unwrap();
         assert_eq!(out.states.len(), 2);
         let a_w = &out.states[0];
@@ -157,7 +157,7 @@ mod tests {
 
     #[test]
     fn rejects_bad_measurements() {
-        let mut core = Core::new(two_junctions(), config(ControllerConfig::MaxPressure { hysteresis: None, capacity: None })).unwrap();
+        let mut core = Core::new(two_junctions(), config(ControllerConfig::MaxPressure { hysteresis: None, capacity: None, serve_queue: None })).unwrap();
         assert!(matches!(core.step(0.0, vec![measurement("nope", "A", 0)]), Err(Error::Input(_))));
         assert!(matches!(core.step(0.0, vec![measurement("a_w", "B", 0)]), Err(Error::Input(_))));
         let dup = vec![measurement("a_w", "A", 0), measurement("a_w", "A", 0)];
@@ -173,7 +173,7 @@ mod tests {
     #[test]
     fn hysteresis_never_fights_min_green() {
         let run = |hysteresis| {
-            let mut core = Core::new(two_junctions(), config(ControllerConfig::MaxPressure { hysteresis, capacity: None })).unwrap();
+            let mut core = Core::new(two_junctions(), config(ControllerConfig::MaxPressure { hysteresis, capacity: None, serve_queue: None })).unwrap();
             let mut x: u64 = 0x2545_F491_4F6C_DD1D;
             for t in 0..600 {
                 let mut queue = || {
@@ -200,7 +200,7 @@ mod tests {
     fn rejects_bad_config() {
         let wrong_plan = config(ControllerConfig::Fixed { green_s: vec![40.0], offsets_s: None });
         assert!(matches!(Core::new(two_junctions(), wrong_plan), Err(Error::Config(_))));
-        let mut bad_pcu = config(ControllerConfig::MaxPressure { hysteresis: None, capacity: None });
+        let mut bad_pcu = config(ControllerConfig::MaxPressure { hysteresis: None, capacity: None, serve_queue: None });
         bad_pcu.pcu.bus = 0.0;
         assert!(Core::new(two_junctions(), bad_pcu).is_err());
     }
@@ -228,7 +228,7 @@ mod tests {
 
     #[test]
     fn guard_v1_override_reaches_the_controller() {
-        let mut cfg = config(ControllerConfig::MaxPressure { hysteresis: None, capacity: None });
+        let mut cfg = config(ControllerConfig::MaxPressure { hysteresis: None, capacity: None, serve_queue: None });
         cfg.guard = serde_json::from_str(r#"{"kind":"v1"}"#).unwrap();
         let mut core = Core::new(two_junctions(), cfg).unwrap();
         assert_eq!(core.guard_name(), "v1");
@@ -249,7 +249,7 @@ mod tests {
 
     #[test]
     fn passthrough_output_is_unchanged_by_the_v1_code() {
-        let mut core = Core::new(two_junctions(), config(ControllerConfig::MaxPressure { hysteresis: None, capacity: None })).unwrap();
+        let mut core = Core::new(two_junctions(), config(ControllerConfig::MaxPressure { hysteresis: None, capacity: None, serve_queue: None })).unwrap();
         for t in 0..300 {
             let out = core.step(f64::from(t), frozen_a_n(t)).unwrap();
             for s in &out.states {
@@ -261,7 +261,7 @@ mod tests {
 
     #[test]
     fn rejects_bad_guard_config() {
-        let mut cfg = config(ControllerConfig::MaxPressure { hysteresis: None, capacity: None });
+        let mut cfg = config(ControllerConfig::MaxPressure { hysteresis: None, capacity: None, serve_queue: None });
         cfg.guard = serde_json::from_str(r#"{"kind":"v1","trust":{"suspect_score":0.95}}"#).unwrap();
         assert!(matches!(Core::new(two_junctions(), cfg), Err(Error::Config(_))));
     }

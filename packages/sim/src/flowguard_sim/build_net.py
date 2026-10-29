@@ -4,10 +4,14 @@
 
 Runs netconvert on the hand-written node/edge files, then reads the network
 back with sumolib and writes corridor.json (contract type `Corridor`): the
-junctions with their two phases and signal link order, every approach with
-its length, lanes and where each turn leads, and where traffic enters and
-leaves. For the real OSM corridor the phases have to be chosen by hand; this
-gives a starting point (decisions.md D6). The driving side comes from
+junctions with their phases and signal link order, every approach with its
+length, lanes and where each turn leads, and where traffic enters and leaves.
+Phases are exclusive by approach (decisions.md D32): one phase per incoming
+approach, so only one approach of a junction is ever green, in the same
+geographic order at every junction (from the west, east, north, south) so a
+fixed plan and its green wave mean the same thing everywhere. For the real
+OSM corridor the phases have to be chosen by hand; this gives a starting
+point (decisions.md D6). The driving side comes from
 config/sim.json (`driving_side`, D29): Karachi drives on the left.
 """
 # pyright: basic
@@ -48,6 +52,15 @@ def movement_targets(edge: Any) -> dict[str, str | None]:
     return out
 
 
+def phase_order(junction: Any, main: list[Any], side: list[Any]) -> list[Any]:
+    """Main-road approaches from the west then the east, side streets from the
+    north then the south (by where each approach starts relative to the junction)."""
+    x0, y0 = junction.getCoord()
+    by_x = sorted(main, key=lambda e: e.getFromNode().getCoord()[0] - x0)
+    by_y = sorted(side, key=lambda e: y0 - e.getFromNode().getCoord()[1])
+    return by_x + by_y
+
+
 def corridor_from_net(net: Any) -> Corridor:
     junctions: list[dict[str, Any]] = []
     approaches: list[dict[str, Any]] = []
@@ -63,7 +76,7 @@ def corridor_from_net(net: Any) -> Corridor:
 
         junctions.append({
             "id": jid,
-            "phases": [[e.getID() for e in main], [e.getID() for e in side]],
+            "phases": [[e.getID()] for e in phase_order(net.getNode(jid), main, side)],
             "links": [links[i] for i in range(len(links))],
         })
         for e in main + side:
